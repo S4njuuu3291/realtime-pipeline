@@ -1,53 +1,71 @@
-include .env
+# 1. Load environment variables
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
-.PHONY: help build test clean docker-up docker-down docker-build
+# Variables
+DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-compose.yml
+POSTGRES_USER ?= admin
+POSTGRES_DB ?= ecom_db
+
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db logs
 
 help:
-	@echo "Real-time Crypto Pipeline - Available Commands"
+	@echo "Enterprise CDC Pipeline - Available Commands"
 	@echo ""
-	@echo "  make build          Build Go applications"
-	@echo "  make test           Run tests"
-	@echo "  make clean          Remove build artifacts"
-	@echo "  make docker-build   Build Docker images"
-	@echo "  make docker-up      Start services (docker-compose)"
-	@echo "  make docker-down    Stop services"
-	@echo "  make run-producer   Run Kafka producer"
-	@echo "  make run-processor  Run Spark processor"
+	@echo "  make build              Build Go applications"
+	@echo "  make docker-up          Start all services (with build check)"
+	@echo "  make docker-down        Stop and remove containers"
+	@echo "  make docker-rebuild     Force rebuild and restart order-service"
+	@echo "  make init-db            Initialize database schema (create tables)"
+	@echo "  make db-shell           Enter PostgreSQL CLI"
+	@echo "  make order-service-bash Enter FastAPI container"
+	@echo "  make logs               View all container logs"
 
 build:
-	@echo "Building applications..."
-	cd cmd/producer && go build -o ../../bin/producer
-	cd cmd/processor && go build -o ../../bin/processor
+	@echo "Building Go applications..."
+	mkdir -p bin
+	go build -o bin/producer cmd/producer/main.go
+	go build -o bin/processor cmd/processor/main.go
 
-test:
-	@echo "Running tests..."
-	go test -v ./...
+docker-build:
+	@echo "Building Docker images..."
+	$(DOCKER_COMPOSE) build
+
+docker-up:
+	@echo "Starting services..."
+	$(DOCKER_COMPOSE) up -d
+
+docker-down:
+	@echo "Stopping services..."
+	$(DOCKER_COMPOSE) down
+
+# Perintah khusus untuk reset jika order-service error terus (Clear Cache)
+docker-rebuild:
+	@echo "Rebuilding order-service without cache..."
+	$(DOCKER_COMPOSE) build --no-cache order-service
+	$(DOCKER_COMPOSE) up -d order-service
+
+order-service-bash:
+	@echo "Entering order-service container..."
+	docker exec -it order-service /bin/bash
+
+init-db:
+	@echo "Initializing database schema..."
+	@echo "Waiting for PostgreSQL to be ready..."
+	@sleep 3
+	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /dev/stdin < scripts/sql/init_source.sql
+	@echo "✓ Database schema initialized successfully"
+
+db-shell:
+	@echo "Accessing PostgreSQL shell..."
+	$(DOCKER_COMPOSE) exec postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+
+logs:
+	$(DOCKER_COMPOSE) logs -f
 
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf bin/
 	go clean
-
-docker-build:
-	@echo "Building Docker images..."
-	docker compose --env-file .env -f deployments/docker/docker-compose.yml build
-
-docker-up:
-	@echo "Starting services..."
-	docker compose --env-file .env -f deployments/docker/docker-compose.yml up -d
-
-docker-down:
-	@echo "Stopping services..."
-	docker compose --env-file .env -f deployments/docker/docker-compose.yml down
-
-run-producer: build
-	@echo "Running producer..."
-	./bin/producer
-
-run-processor: build
-	@echo "Running processor..."
-	./bin/processor
-
-db-shell:
-	@echo "Accessing PostgreSQL shell..."
-	docker compose --env-file .env -f deployments/docker/docker-compose.yml exec postgres-source psql -U ${POSTGRES_USER} ${POSTGRES_DB}
