@@ -5,13 +5,13 @@
 ```
 Binance WebSocket
       ↓
-Kafka Producer (idempotent)
+Redpandas Producer (idempotent)
       ↓
-Kafka Topic (crypto_prices)
+Redpandas Topic (crypto_prices)
       ↓
-Spark Structured Streaming
+Golang Consumer
       ↓
-PostgreSQL (UPSERT, PK-based)
+ClickHouse Database
       ↓
 Grafana Dashboard
 ```
