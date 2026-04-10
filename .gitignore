@@ -1,0 +1,47 @@
+# Build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Test cache
+.pytest_cache/
+.coverage
+coverage.out
+*.test
+
+# Go
+go.sum
+*.o
+*.a
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Misc
+.DS_Store
+*.pem
+*.key
