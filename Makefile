@@ -1,3 +1,5 @@
+include .env
+
 .PHONY: help build test clean docker-up docker-down docker-build
 
 help:
@@ -28,15 +30,15 @@ clean:
 
 docker-build:
 	@echo "Building Docker images..."
-	docker-compose -f deployments/docker/docker-compose.yml build
+	docker compose --env-file .env -f deployments/docker/docker-compose.yml build
 
 docker-up:
 	@echo "Starting services..."
-	docker-compose -f deployments/docker/docker-compose.yml up -d
+	docker compose --env-file .env -f deployments/docker/docker-compose.yml up -d
 
 docker-down:
 	@echo "Stopping services..."
-	docker-compose -f deployments/docker/docker-compose.yml down
+	docker compose --env-file .env -f deployments/docker/docker-compose.yml down
 
 run-producer: build
 	@echo "Running producer..."
@@ -45,3 +47,7 @@ run-producer: build
 run-processor: build
 	@echo "Running processor..."
 	./bin/processor
+
+db-shell:
+	@echo "Accessing PostgreSQL shell..."
+	docker compose --env-file .env -f deployments/docker/docker-compose.yml exec postgres-source psql -U ${POSTGRES_USER} ${POSTGRES_DB}
