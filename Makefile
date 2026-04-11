@@ -9,7 +9,7 @@ DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-com
 POSTGRES_USER ?= admin
 POSTGRES_DB ?= ecom_db
 
-.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db logs
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs
 
 help:
 	@echo "Enterprise CDC Pipeline - Available Commands"
@@ -19,6 +19,7 @@ help:
 	@echo "  make docker-down        Stop and remove containers"
 	@echo "  make docker-rebuild     Force rebuild and restart order-service"
 	@echo "  make init-db            Initialize database schema (create tables)"
+	@echo "  make clean-db           Drop all existing tables in the database"
 	@echo "  make db-shell           Enter PostgreSQL CLI"
 	@echo "  make order-service-bash Enter FastAPI container"
 	@echo "  make logs               View all container logs"
@@ -51,12 +52,17 @@ order-service-bash:
 	@echo "Entering order-service container..."
 	docker exec -it order-service /bin/bash
 
-init-db:
+init-db: clean-db
 	@echo "Initializing database schema..."
 	@echo "Waiting for PostgreSQL to be ready..."
 	@sleep 3
 	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /dev/stdin < scripts/sql/init_source.sql
 	@echo "✓ Database schema initialized successfully"
+
+clean-db:
+	@echo "Dropping existing database tables..."
+	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP TABLE IF EXISTS order_items, orders, products, users CASCADE;"
+	@echo "✓ Database tables dropped successfully"
 
 db-shell:
 	@echo "Accessing PostgreSQL shell..."

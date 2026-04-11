@@ -45,6 +45,8 @@ services:
     container_name: order-service
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+    volumes:
+      - ../../services/order-service:/app
     ports:
       - "8000:8000"
     depends_on:
