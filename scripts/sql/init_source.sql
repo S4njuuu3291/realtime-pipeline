@@ -76,3 +76,5 @@ INSERT INTO products (name, category, brand, price, stock_quantity) VALUES
 ('Mechanical Keyboard K6', 'Accessories', 'Keychron', 99.50, 150),
 ('G Pro X Superlight', 'Accessories', 'Logitech', 129.99, 120),
 ('ErgoChair Pro', 'Furniture', 'Autonomous', 499.00, 20);
+
+CREATE PUBLICATION my_pub FOR ALL TABLES;

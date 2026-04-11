@@ -37,6 +37,18 @@ services:
     ports:
       - "19092:19092"
 
+  # Redpanda Console (The UI UI GUI)
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.4.3
+    container_name: redpanda-console
+    environment:
+      KAFKA_BROKERS: "redpanda:9092"
+    ports:
+      - "8888:8080"
+    depends_on:
+      - redpanda
+
+
   # Order Service (FastAPI)
   order-service:
     build:
@@ -57,5 +69,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - default
+
+  # Pelahap WAL CDC (Golang Ingestor)
+  cdc-ingestor:
+    build:
+      context: ../../services/cdc-ingestor
+      dockerfile: Dockerfile
+    container_name: cdc-ingestor
+    env_file:
+      - ../../.env  # Suntikkan semua konfigurasi koneksi otomatis
+    depends_on:
+      postgres-source:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
     networks:
       - default

@@ -19,6 +19,8 @@ help:
 	@echo "  make docker-down        Stop and remove containers"
 	@echo "  make docker-rebuild     Force rebuild and restart order-service"
 	@echo "  make init-db            Initialize database schema (create tables)"
+	@echo "  make seed-db            Mass insert 1000s of dummy users and products"
+	@echo "  make generate-traffic   Trigger infinite random orders (CDC load testing)"
 	@echo "  make clean-db           Drop all existing tables in the database"
 	@echo "  make db-shell           Enter PostgreSQL CLI"
 	@echo "  make order-service-bash Enter FastAPI container"
@@ -52,12 +54,20 @@ order-service-bash:
 	@echo "Entering order-service container..."
 	docker exec -it order-service /bin/bash
 
-init-db: clean-db
+init-db:
 	@echo "Initializing database schema..."
 	@echo "Waiting for PostgreSQL to be ready..."
 	@sleep 3
 	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /dev/stdin < scripts/sql/init_source.sql
 	@echo "✓ Database schema initialized successfully"
+
+seed-db:
+	@echo "Suntik Data Massal (Seeding) sedang berjalan..."
+	$(DOCKER_COMPOSE) exec -T order-service python data_generator.py --seed
+
+generate-traffic:
+	@echo "Mengaktifkan Robot Transaksi..."
+	$(DOCKER_COMPOSE) exec order-service python data_generator.py --traffic
 
 clean-db:
 	@echo "Dropping existing database tables..."
@@ -70,6 +80,17 @@ db-shell:
 
 logs:
 	$(DOCKER_COMPOSE) logs -f
+
+logs-cdc:
+	$(DOCKER_COMPOSE) logs -f cdc-ingestor
+
+turn-on-cdc:
+	$(DOCKER_COMPOSE) up -d --build cdc-ingestor
+
+turn-off-cdc:
+	$(DOCKER_COMPOSE) rm -s -f cdc-ingestor
+
+on-logs-cdc: turn-on-cdc logs-cdc
 
 clean:
 	@echo "Cleaning build artifacts..."
