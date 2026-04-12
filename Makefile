@@ -66,8 +66,8 @@ seed-db:
 	$(DOCKER_COMPOSE) exec -T order-service python data_generator.py --seed
 
 generate-traffic:
-	@echo "Mengaktifkan Robot Transaksi..."
-	$(DOCKER_COMPOSE) exec order-service python data_generator.py --traffic
+	@echo "Mengaktifkan Robot Transaksi di background..."
+	$(DOCKER_COMPOSE) exec -d order-service python data_generator.py --traffic
 
 clean-db:
 	@echo "Dropping existing database tables..."

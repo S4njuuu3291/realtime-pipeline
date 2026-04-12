@@ -87,3 +87,19 @@ services:
         condition: service_started
     networks:
       - default
+
+    # Robot Transaksi (Traffic Generator)
+  traffic-generator:
+    build:
+      context: ../../services/order-service
+      dockerfile: Dockerfile
+    container_name: traffic-generator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+    command: ["python", "data_generator.py", "--traffic"]
+    depends_on:
+      order-service:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
