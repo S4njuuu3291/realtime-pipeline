@@ -15,7 +15,6 @@ coverage.out
 *.test
 
 # Go
-go.sum
 *.o
 *.a
 .DS_Store
