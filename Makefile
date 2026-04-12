@@ -99,3 +99,6 @@ clean:
 
 act-deploy:
 	act -P ubuntu-latest=catthehacker/ubuntu:act-latest --secret-file .secrets --network bridge
+
+setup-db:
+	init-db seed-db

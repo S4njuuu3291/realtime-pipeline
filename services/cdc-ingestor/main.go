@@ -72,6 +72,9 @@ func main() {
 		}
 		rawMsg, ok := msg.(*pgproto3.CopyData)
 		if !ok {
+			if errResp, isErr := msg.(*pgproto3.ErrorResponse); isErr {
+				log.Fatalf("Fatal ErrorResponse dari Postgres: %s (Code: %s, Detail: %s, Hint: %s)", errResp.Message, errResp.Code, errResp.Detail, errResp.Hint)
+			}
 			log.Printf("Received non-CopyData message: %T\n", msg)
 			continue
 		}
