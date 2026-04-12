@@ -47,3 +47,4 @@ docker-compose.override.yml
 
 # Local Secrets (act)
 .secrets
+
