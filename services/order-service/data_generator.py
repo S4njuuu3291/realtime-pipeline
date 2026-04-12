@@ -38,6 +38,7 @@ def seed_db():
             stock_quantity=random.randint(50, 1000)
         ))
     
+    
     db.add_all(users)
     db.add_all(products)
     db.commit()
