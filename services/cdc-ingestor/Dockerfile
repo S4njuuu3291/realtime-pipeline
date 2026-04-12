@@ -12,15 +12,12 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 
 # 2. Download dependensi
-# Jika go.sum tidak ada, perintah ini akan tetap jalan tapi mungkin lebih lambat
-RUN go mod download || go mod tidy
+RUN go mod download
 
 # 3. Salin seluruh kode sumber dari context build
 COPY . .
 
 # 4. Build aplikasi
-# Pastikan main.go ada di root folder build context, 
-# atau arahkan ke path yang benar (misal: ./services/cdc-ingestor/main.go)
 RUN CGO_ENABLED=0 GOOS=linux go build -o cdc-ingestor .
 
 # --- Tahap Produksi (Final Stage) ---
