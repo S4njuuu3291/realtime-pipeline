@@ -45,17 +45,17 @@ def seed_db():
     print("✅ SELESAI: 1000 Users & 300 Products berhasil disuntikkan ke dalam sistem!")
 
 def generate_traffic():
-    print("🔥 Memulai Mesin Simluator Transaksi (Traffic Generator)...")
-    print("Aplikasi akan memanggil API /simulate/order secara konstan (Tekan Ctrl+C untuk berhenti)\n")
+    print("🔥 Memulai Mesin Simluator Transaksi (Traffic Generator)...", flush=True)
+    print("Aplikasi akan memanggil API /simulate/order secara konstan (Tekan Ctrl+C untuk berhenti)\n", flush=True)
     
-    req = urllib.request.Request("http://localhost:8000/simulate/order", method="POST")
+    req = urllib.request.Request("http://order-service:8000/simulate/order", method="POST")
     while True:
         try:
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read().decode())
-                print(f"🛒 Transaksi Berhasil -> Order ID: {result.get('order_id')} | Item: {result.get('items_count')} | Total: ${result.get('total_amount')}")
+                print(f"🛒 Transaksi Berhasil -> Order ID: {result.get('order_id')} | Item: {result.get('items_count')} | Total: ${result.get('total_amount')}", flush=True)
         except Exception as e:
-            print(f"❌ Gagal memanggil API: {e}")
+            print(f"❌ Gagal memanggil API: {e}", flush=True)
         
         # Jeda acak antara 0.5 hingga 2 detik agar trafiknya terlihat riil, bukan ddos
         time.sleep(random.uniform(0.5, 2.0))

@@ -96,6 +96,7 @@ services:
     container_name: traffic-generator
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+      PYTHONUNBUFFERED: 1
     command: ["python", "data_generator.py", "--traffic"]
     depends_on:
       order-service:
