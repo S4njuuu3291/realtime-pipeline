@@ -96,3 +96,6 @@ clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf bin/
 	go clean
+
+act-deploy:
+	act -P ubuntu-latest=catthehacker/ubuntu:act-latest --secret-file .secrets --network bridge

@@ -1,26 +1,41 @@
-# Tahap Pembangunan (Builder Stage)
-FROM golang:alpine AS builder
+# --- Tahap Pembangunan (Builder Stage) ---
+FROM golang:1.25-alpine AS builder
+
+# Install git jika dependensi Go mengambil dari repo private/public
+RUN apk add --no-cache git
 
 # Atur direktori kerja dalam kontainer
 WORKDIR /app
 
-# Salin modul dan unduh dependensi
-COPY go.mod go.sum ./
-RUN go mod download
+# 1. Salin file modul terlebih dahulu (Optimasi Cache Docker)
+# Menggunakan wildcard 'go.sum*' agar tidak error jika file belum ada
+COPY go.mod go.sum* ./
 
-# Salin seluruh kode Golang ke dalam
+# 2. Download dependensi
+# Jika go.sum tidak ada, perintah ini akan tetap jalan tapi mungkin lebih lambat
+RUN go mod download || go mod tidy
+
+# 3. Salin seluruh kode sumber dari context build
 COPY . .
 
-# Build aplikasi menjadi file binary tunggal dengan performa tinggi
-RUN CGO_ENABLED=0 GOOS=linux go build -o cdc-ingestor main.go
+# 4. Build aplikasi
+# Pastikan main.go ada di root folder build context, 
+# atau arahkan ke path yang benar (misal: ./services/cdc-ingestor/main.go)
+RUN CGO_ENABLED=0 GOOS=linux go build -o cdc-ingestor .
 
-# Tahap Produksi (Final Stage) - Sangat Ringan
+# --- Tahap Produksi (Final Stage) ---
 FROM alpine:latest
+
+# Install ca-certificates agar bisa akses HTTPS (penting untuk API/DB Cloud)
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
-# Ambil hasil binary yang sudah di build dari tahap sebelumnya
+# Ambil binary dari stage builder
 COPY --from=builder /app/cdc-ingestor .
 
-# Jalankan programnya
-CMD ["./cdc-ingestor"]
+# Jika ada file .env atau config yang dibutuhkan saat runtime:
+# COPY .env . 
+
+# Jalankan program
+ENTRYPOINT ["./cdc-ingestor"]
