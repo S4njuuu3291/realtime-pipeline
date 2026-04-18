@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package cdc;
+
+option go_package = "./;cdc_proto";
+
+// Representasi tabel 'users'
+message User {
+  int32 id = 1;
+  string email = 2;
+  string full_name = 3;
+  string created_at = 4;
+  string updated_at = 5;
+}
+
+// Representasi tabel 'products'
+message Product {
+  int32 id = 1;
+  string name = 2;
+  string category = 3;
+  string brand = 4;
+  string price = 5; // Gunakan string untuk DECIMAL demi menjaga presisi (atau bisa double)
+  int32 stock_quantity = 6;
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+// Representasi tabel 'orders'
+message Order {
+  int32 id = 1;
+  int32 user_id = 2;
+  string total_amount = 3; // String untuk DECIMAL
+  string status = 4;
+  string created_at = 5;
+  string updated_at = 6;
+}
+
+// Representasi tabel 'order_items'
+message OrderItem {
+  int32 id = 1;
+  int32 order_id = 2;
+  int32 product_id = 3;
+  int32 quantity = 4;
+  string unit_price = 5; // String untuk DECIMAL
+  string created_at = 6;
+}
+
+// Entity menggunakan OneOf agar satu Payload bisa menampung salah satu tabel
+message Entity {
+  oneof entity_type {
+    User user = 1;
+    Product product = 2;
+    Order order = 3;
+    OrderItem order_item = 4;
+  }
+}
+
+// CDCEvent adalah "Envelope" utama yang akan dikirim ke Redpanda
+message CDCEvent {
+  string table_name = 1; // "users", "products", "orders", atau "order_items"
+  string operation = 2;  // "INSERT", "UPDATE", "DELETE"
+  int64 timestamp = 3;   // Waktu saat event dibuat/diproses
+  
+  // State sebelum dan sesudah
+  Entity before = 4;
+  Entity after = 5;
+}
