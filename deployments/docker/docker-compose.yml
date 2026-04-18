@@ -104,3 +104,19 @@ services:
     networks:
       - default
     restart: unless-stopped
+
+  # Data Warehouse (ClickHouse)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    ports:
+      - "8123:8123" # HTTP Interface (bisa dipakai untuk integrasi aplikasi)
+      - "9000:9000" # Native Client (untuk DBeaver / ClickHouse CLI)
+    ulimits:
+      nofile: 
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
+    networks:
+      - default

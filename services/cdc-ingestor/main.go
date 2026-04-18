@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/joho/godotenv"
+	"github.com/segmentio/kafka-go"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -67,6 +68,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Gagal memulai replikasi: %v\n", err)
 	}
+
+	REDPANDA_BROKERS := os.Getenv("REDPANDA_BROKERS")
+	if REDPANDA_BROKERS == "" {
+		REDPANDA_BROKERS = "localhost:19092"
+	}
+
+	kafkaWriter := &kafka.Writer{
+		Addr:     kafka.TCP(REDPANDA_BROKERS),
+		Topic:    "cdc-events",
+		Balancer: &kafka.Hash{},
+	}
+	defer kafkaWriter.Close()
+	log.Printf("Berhasil menyiapkan Kafka Writer ke %s", REDPANDA_BROKERS)
 
 	log.Println("Streaming dimulai...")
 
@@ -144,7 +158,16 @@ func main() {
 				if err != nil {
 					log.Printf("Gagal marshal INSERT event: %v", err)
 				} else {
-					log.Printf("Berhasil serialisasi INSERT event untuk %s (ukuran: %d bytes)", rel.RelationName, len(protoBytes))
+					routingKey := getEntityID(event.After)
+					err = kafkaWriter.WriteMessages(ctx, kafka.Message{
+						Key:   []byte(routingKey),
+						Value: protoBytes,
+					})
+					if err != nil {
+						log.Printf("Gagal mengirim INSERT event ke Redpanda: %v", err)
+					} else {
+						log.Printf("Berhasil mengirim INSERT event untuk %s", routingKey)
+					}
 				}
 
 			case *pglogrepl.UpdateMessage:
@@ -166,7 +189,16 @@ func main() {
 				if err != nil {
 					log.Printf("Gagal marshal UPDATE event: %v", err)
 				} else {
-					log.Printf("Berhasil serialisasi UPDATE event untuk %s (ukuran: %d bytes)", rel.RelationName, len(protoBytes))
+					routingKey := getEntityID(event.After)
+					err = kafkaWriter.WriteMessages(ctx, kafka.Message{
+						Key:   []byte(routingKey),
+						Value: protoBytes,
+					})
+					if err != nil {
+						log.Printf("Gagal mengirim UPDATE event ke Redpanda: %v", err)
+					} else {
+						log.Printf("Berhasil mengirim UPDATE event untuk %s", routingKey)
+					}
 				}
 
 			case *pglogrepl.DeleteMessage:
@@ -187,7 +219,16 @@ func main() {
 				if err != nil {
 					log.Printf("Gagal marshal DELETE event: %v", err)
 				} else {
-					log.Printf("Berhasil serialisasi DELETE event untuk %s (ukuran: %d bytes)", rel.RelationName, len(protoBytes))
+					routingKey := getEntityID(event.Before)
+					err = kafkaWriter.WriteMessages(ctx, kafka.Message{
+						Key:   []byte(routingKey),
+						Value: protoBytes,
+					})
+					if err != nil {
+						log.Printf("Gagal mengirim DELETE event ke Redpanda: %v", err)
+					} else {
+						log.Printf("Berhasil mengirim DELETE event untuk %s", routingKey)
+					}
 				}
 
 			default:
@@ -302,4 +343,22 @@ func mapTupleToEntity(rel *pglogrepl.RelationMessage, tuple *pglogrepl.TupleData
 	}
 
 	return nil
+}
+
+// Helper function untuk mengambil ID unik sebagai Key Kafka
+func getEntityID(entity *pb.Entity) string {
+	if entity == nil {
+		return "unknown:0"
+	}
+	switch e := entity.EntityType.(type) {
+	case *pb.Entity_User:
+		return fmt.Sprintf("users:%d", e.User.Id)
+	case *pb.Entity_Product:
+		return fmt.Sprintf("products:%d", e.Product.Id)
+	case *pb.Entity_Order:
+		return fmt.Sprintf("orders:%d", e.Order.Id)
+	case *pb.Entity_OrderItem:
+		return fmt.Sprintf("order_items:%d", e.OrderItem.Id)
+	}
+	return "unknown:0"
 }

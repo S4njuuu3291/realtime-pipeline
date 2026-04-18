@@ -18,12 +18,15 @@ help:
 	@echo "  make docker-up          Start all services (with build check)"
 	@echo "  make docker-down        Stop and remove containers"
 	@echo "  make docker-rebuild     Force rebuild and restart order-service"
+	@echo "  make init-redpanda      Initialize Redpanda topics with specific partitions"
+	@echo "  make init-clickhouse    Initialize ClickHouse schema (SCD2, Kafka engine)"
 	@echo "  make init-db            Initialize database schema (create tables)"
 	@echo "  make seed-db            Mass insert 1000s of dummy users and products"
 	@echo "  make generate-traffic   Trigger infinite random orders (CDC load testing)"
 	@echo "  make clean-db           Drop all existing tables in the database"
 	@echo "  make db-shell           Enter PostgreSQL CLI"
 	@echo "  make order-service-bash Enter FastAPI container"
+	@echo "  make clickhouse-shell   Enter ClickHouse CLI"
 	@echo "  make logs               View all container logs"
 
 build:
@@ -54,6 +57,13 @@ order-service-bash:
 	@echo "Entering order-service container..."
 	docker exec -it order-service /bin/bash
 
+init-redpanda:
+	@echo "Initializing Redpanda Topics..."
+	@echo "Waiting for Redpanda to be ready..."
+	@sleep 5
+	$(DOCKER_COMPOSE) exec -T redpanda rpk topic create cdc-events -p 3 || true
+	@echo "✓ Topic cdc-events with 3 partitions initialized"
+
 init-db:
 	@echo "Initializing database schema..."
 	@echo "Waiting for PostgreSQL to be ready..."
@@ -77,6 +87,15 @@ clean-db:
 db-shell:
 	@echo "Accessing PostgreSQL shell..."
 	$(DOCKER_COMPOSE) exec postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+
+clickhouse-shell:
+	@echo "Accessing ClickHouse shell..."
+	docker exec -it clickhouse clickhouse-client
+
+init-clickhouse:
+	@echo "Initializing ClickHouse schema..."
+	cat scripts/sql/init_clickhouse.sql | docker exec -i clickhouse clickhouse-client --multiquery
+	@echo "✓ ClickHouse schema initialized successfully"
 
 logs:
 	$(DOCKER_COMPOSE) logs -f
