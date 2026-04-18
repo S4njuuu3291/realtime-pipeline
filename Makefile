@@ -20,6 +20,8 @@ help:
 	@echo "  make docker-rebuild     Force rebuild and restart order-service"
 	@echo "  make init-redpanda      Initialize Redpanda topics with specific partitions"
 	@echo "  make init-clickhouse    Initialize ClickHouse schema (SCD2, Kafka engine)"
+	@echo "  make clean-clickhouse   Drop all ClickHouse history tables and views"
+	@echo "  make reset-clickhouse   Clean and Re-initialize ClickHouse (Reset Everything)"
 	@echo "  make init-db            Initialize database schema (create tables)"
 	@echo "  make seed-db            Mass insert 1000s of dummy users and products"
 	@echo "  make generate-traffic   Trigger infinite random orders (CDC load testing)"
@@ -96,6 +98,14 @@ init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
 	cat scripts/sql/init_clickhouse.sql | docker exec -i clickhouse clickhouse-client --multiquery
 	@echo "✓ ClickHouse schema initialized successfully"
+
+clean-clickhouse:
+	@echo "Dropping all ClickHouse tables and views..."
+	docker exec -i clickhouse clickhouse-client -q "DROP TABLE IF EXISTS cdc_queue; DROP VIEW IF EXISTS users_mv; DROP VIEW IF EXISTS products_mv; DROP VIEW IF EXISTS orders_mv; DROP VIEW IF EXISTS order_items_mv; DROP TABLE IF EXISTS users_history; DROP TABLE IF EXISTS products_history; DROP TABLE IF EXISTS orders_history; DROP TABLE IF EXISTS order_items_history;"
+	@echo "✓ ClickHouse environment cleaned"
+
+reset-clickhouse: clean-clickhouse init-clickhouse
+
 
 logs:
 	$(DOCKER_COMPOSE) logs -f
