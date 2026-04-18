@@ -27,7 +27,7 @@ help:
 	@echo "  make logs               View all container logs"
 
 build:
-	@echo "Building Go applications..."
+	@echo "Building Go applications...."
 	mkdir -p bin
 	go build -o bin/producer cmd/producer/main.go
 	go build -o bin/processor cmd/processor/main.go

@@ -5,14 +5,19 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
+	pb "github.com/S4njuuu3291/realtime-pipeline.git/proto"
 	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/joho/godotenv"
+	"google.golang.org/protobuf/proto"
 )
 
 var lastProcessedLSN pglogrepl.LSN
+var relationsCache = make(map[uint32]*pglogrepl.RelationMessage)
 
 func init() {
 	// Arahkan dengan pasti ke lokasi .env di root foldernya
@@ -116,46 +121,185 @@ func main() {
 			switch m := logicalMsg.(type) {
 
 			case *pglogrepl.RelationMessage:
-				log.Printf("--- TABLE METADATA ---")
+				// Simpan metadata tabel ke dalam cache
+				relationsCache[m.RelationID] = m
+				log.Printf("--- TABLE METADATA CACHED ---")
 				log.Printf("ID Tabel: %d, Nama Tabel: %s", m.RelationID, m.RelationName)
 
-				for _, col := range m.Columns {
-					log.Printf("Kolom: %s, Tipe: %d", col.Name, col.DataType)
+			case *pglogrepl.InsertMessage:
+				rel := relationsCache[m.RelationID]
+				if rel == nil {
+					log.Printf("Metadata tidak ditemukan untuk relasi ID %d", m.RelationID)
+					continue
 				}
 
-			case *pglogrepl.InsertMessage:
-				log.Printf("--- DATA INSERTED ---")
+				event := &pb.CDCEvent{
+					TableName: rel.RelationName,
+					Operation: "INSERT",
+					Timestamp: time.Now().UnixMilli(),
+					After:     mapTupleToEntity(rel, m.Tuple),
+				}
 
-				for i, col := range m.Tuple.Columns {
-					// col.Data adalah []byte, kita ubah ke string agar terbaca
-					log.Printf("Kolom ke-%d: %s", i, string(col.Data))
+				protoBytes, err := proto.Marshal(event)
+				if err != nil {
+					log.Printf("Gagal marshal INSERT event: %v", err)
+				} else {
+					log.Printf("Berhasil serialisasi INSERT event untuk %s (ukuran: %d bytes)", rel.RelationName, len(protoBytes))
 				}
 
 			case *pglogrepl.UpdateMessage:
-				log.Printf("--- DATA UPDATED ---")
-				log.Printf("Data Baru:")
-				for _, col := range m.NewTuple.Columns {
-					log.Printf("- %s", string(col.Data))
+				rel := relationsCache[m.RelationID]
+				if rel == nil {
+					log.Printf("Metadata tidak ditemukan untuk relasi ID %d", m.RelationID)
+					continue
 				}
 
-				// Data lama (jika ada)
-				if m.OldTuple != nil {
-					log.Printf("Data Lama:")
-					for _, col := range m.OldTuple.Columns {
-						log.Printf("- %s", string(col.Data))
-					}
+				event := &pb.CDCEvent{
+					TableName: rel.RelationName,
+					Operation: "UPDATE",
+					Timestamp: time.Now().UnixMilli(),
+					After:     mapTupleToEntity(rel, m.NewTuple),
+					Before:    mapTupleToEntity(rel, m.OldTuple),
+				}
+
+				protoBytes, err := proto.Marshal(event)
+				if err != nil {
+					log.Printf("Gagal marshal UPDATE event: %v", err)
+				} else {
+					log.Printf("Berhasil serialisasi UPDATE event untuk %s (ukuran: %d bytes)", rel.RelationName, len(protoBytes))
 				}
 
 			case *pglogrepl.DeleteMessage:
-				log.Printf("--- DATA DELETED ---")
-				log.Printf("Data yang dihapus:")
-				for _, col := range m.OldTuple.Columns {
-					log.Printf("- %s", string(col.Data))
+				rel := relationsCache[m.RelationID]
+				if rel == nil {
+					log.Printf("Metadata tidak ditemukan untuk relasi ID %d", m.RelationID)
+					continue
 				}
 
-				log.Printf("XLogData received: WAL %s, Payload: %x", xld.WALStart, xld.WALData)
+				event := &pb.CDCEvent{
+					TableName: rel.RelationName,
+					Operation: "DELETE",
+					Timestamp: time.Now().UnixMilli(),
+					Before:    mapTupleToEntity(rel, m.OldTuple),
+				}
+
+				protoBytes, err := proto.Marshal(event)
+				if err != nil {
+					log.Printf("Gagal marshal DELETE event: %v", err)
+				} else {
+					log.Printf("Berhasil serialisasi DELETE event untuk %s (ukuran: %d bytes)", rel.RelationName, len(protoBytes))
+				}
+
+			default:
+				log.Printf("Logical message lain diterima: %T", m)
 			}
 		}
 
 	}
+}
+
+// Helper function untuk memetakan TupleData dari Postgres ke struct Protobuf (pb.Entity)
+func mapTupleToEntity(rel *pglogrepl.RelationMessage, tuple *pglogrepl.TupleData) *pb.Entity {
+	if rel == nil || tuple == nil {
+		return nil
+	}
+
+	switch rel.RelationName {
+	case "users":
+		user := &pb.User{}
+		for i, col := range tuple.Columns {
+			val := string(col.Data)
+			switch rel.Columns[i].Name {
+			case "id":
+				id, _ := strconv.Atoi(val)
+				user.Id = int32(id)
+			case "email":
+				user.Email = val
+			case "full_name":
+				user.FullName = val
+			case "created_at":
+				user.CreatedAt = val
+			case "updated_at":
+				user.UpdatedAt = val
+			}
+		}
+		return &pb.Entity{EntityType: &pb.Entity_User{User: user}}
+
+	case "products":
+		product := &pb.Product{}
+		for i, col := range tuple.Columns {
+			val := string(col.Data)
+			switch rel.Columns[i].Name {
+			case "id":
+				id, _ := strconv.Atoi(val)
+				product.Id = int32(id)
+			case "name":
+				product.Name = val
+			case "category":
+				product.Category = val
+			case "brand":
+				product.Brand = val
+			case "price":
+				product.Price = val
+			case "stock_quantity":
+				sq, _ := strconv.Atoi(val)
+				product.StockQuantity = int32(sq)
+			case "created_at":
+				product.CreatedAt = val
+			case "updated_at":
+				product.UpdatedAt = val
+			}
+		}
+		return &pb.Entity{EntityType: &pb.Entity_Product{Product: product}}
+
+	case "orders":
+		order := &pb.Order{}
+		for i, col := range tuple.Columns {
+			val := string(col.Data)
+			switch rel.Columns[i].Name {
+			case "id":
+				id, _ := strconv.Atoi(val)
+				order.Id = int32(id)
+			case "user_id":
+				uid, _ := strconv.Atoi(val)
+				order.UserId = int32(uid)
+			case "total_amount":
+				order.TotalAmount = val
+			case "status":
+				order.Status = val
+			case "created_at":
+				order.CreatedAt = val
+			case "updated_at":
+				order.UpdatedAt = val
+			}
+		}
+		return &pb.Entity{EntityType: &pb.Entity_Order{Order: order}}
+
+	case "order_items":
+		item := &pb.OrderItem{}
+		for i, col := range tuple.Columns {
+			val := string(col.Data)
+			switch rel.Columns[i].Name {
+			case "id":
+				id, _ := strconv.Atoi(val)
+				item.Id = int32(id)
+			case "order_id":
+				oid, _ := strconv.Atoi(val)
+				item.OrderId = int32(oid)
+			case "product_id":
+				pid, _ := strconv.Atoi(val)
+				item.ProductId = int32(pid)
+			case "quantity":
+				q, _ := strconv.Atoi(val)
+				item.Quantity = int32(q)
+			case "unit_price":
+				item.UnitPrice = val
+			case "created_at":
+				item.CreatedAt = val
+			}
+		}
+		return &pb.Entity{EntityType: &pb.Entity_OrderItem{OrderItem: item}}
+	}
+
+	return nil
 }
