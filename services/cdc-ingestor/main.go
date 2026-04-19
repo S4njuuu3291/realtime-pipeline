@@ -75,9 +75,11 @@ func main() {
 	}
 
 	kafkaWriter := &kafka.Writer{
-		Addr:     kafka.TCP(REDPANDA_BROKERS),
-		Topic:    "cdc-events",
-		Balancer: &kafka.Hash{},
+		Addr:         kafka.TCP(REDPANDA_BROKERS),
+		Topic:        "cdc-events",
+		Balancer:     &kafka.Hash{},
+		Async:        true,
+		BatchTimeout: 10 * time.Millisecond,
 	}
 	defer kafkaWriter.Close()
 	log.Printf("Berhasil menyiapkan Kafka Writer ke %s", REDPANDA_BROKERS)

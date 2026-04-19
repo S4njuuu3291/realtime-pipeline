@@ -25,15 +25,15 @@ CREATE TABLE IF NOT EXISTS cdc_queue (
     operation String,     -- Index 2
     timestamp Int64,      -- Index 3
     before Tuple(
-        user Tuple(id Int32, email String, full_name String, created_at String),
-        product Tuple(id Int32, name String, category String, brand String, price String, stock_quantity Int32),
-        order Tuple(id Int32, user_id Int32, total_amount String, status String),
+        user Tuple(id Int32, email String, full_name String, created_at String, updated_at String),
+        product Tuple(id Int32, name String, category String, brand String, price String, stock_quantity Int32, created_at String, updated_at String),
+        order Tuple(id Int32, user_id Int32, total_amount String, status String, created_at String, updated_at String),
         order_item Tuple(id Int32, order_id Int32, product_id Int32, quantity Int32, unit_price String, created_at String)
     ),
     after Tuple(
-        user Tuple(id Int32, email String, full_name String, created_at String),
-        product Tuple(id Int32, name String, category String, brand String, price String, stock_quantity Int32),
-        order Tuple(id Int32, user_id Int32, total_amount String, status String),
+        user Tuple(id Int32, email String, full_name String, created_at String, updated_at String),
+        product Tuple(id Int32, name String, category String, brand String, price String, stock_quantity Int32, created_at String, updated_at String),
+        order Tuple(id Int32, user_id Int32, total_amount String, status String, created_at String, updated_at String),
         order_item Tuple(id Int32, order_id Int32, product_id Int32, quantity Int32, unit_price String, created_at String)
     )
 ) ENGINE = Kafka
