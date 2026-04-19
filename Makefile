@@ -19,7 +19,8 @@ help:
 	@echo "  make docker-down        Stop and remove containers"
 	@echo "  make docker-rebuild     Force rebuild and restart order-service"
 	@echo "  make init-redpanda      Initialize Redpanda topics with specific partitions"
-	@echo "  make init-clickhouse    Initialize ClickHouse schema (SCD2, Kafka engine)"
+	@echo "  make init-clickhouse    Initialize ClickHouse schema (Bronze Layer)"
+	@echo "  make init-analytics     Initialize ClickHouse Analytics schema (Silver & Gold OBT)"
 	@echo "  make clean-clickhouse   Drop all ClickHouse history tables and views"
 	@echo "  make reset-clickhouse   Clean and Re-initialize ClickHouse (Reset Everything)"
 	@echo "  make init-db            Initialize database schema (create tables)"
@@ -98,6 +99,11 @@ init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
 	cat scripts/sql/init_clickhouse.sql | docker exec -i clickhouse clickhouse-client --multiquery
 	@echo "✓ ClickHouse schema initialized successfully"
+
+init-analytics:
+	@echo "Initializing Analytics (Silver & Gold Layers)..."
+	cat scripts/sql/init_analytics.sql | docker exec -i clickhouse clickhouse-client --multiquery
+	@echo "✓ Analytics schema initialized successfully"
 
 clean-clickhouse:
 	@echo "Dropping all ClickHouse tables and views..."
