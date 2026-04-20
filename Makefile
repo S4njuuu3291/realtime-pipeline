@@ -21,6 +21,7 @@ help:
 	@echo "  make init-redpanda      Initialize Redpanda topics with specific partitions"
 	@echo "  make init-clickhouse    Initialize ClickHouse schema (Bronze Layer)"
 	@echo "  make init-analytics     Initialize ClickHouse Analytics schema (Silver & Gold OBT)"
+	@echo "  make init-superset      Initialize Apache Superset (DB & Admin User)"
 	@echo "  make clean-clickhouse   Drop all ClickHouse history tables and views"
 	@echo "  make reset-clickhouse   Clean and Re-initialize ClickHouse (Reset Everything)"
 	@echo "  make init-db            Initialize database schema (create tables)"
@@ -87,30 +88,107 @@ clean-db:
 	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP TABLE IF EXISTS order_items, orders, products, users CASCADE;"
 	@echo "✓ Database tables dropped successfully"
 
+drop-slot:
+	@echo "Dropping PostgreSQL replication slot..."
+	-$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT pg_drop_replication_slot('cdc_slot');"
+	@echo "✓ Replication slot cleaned"
+
 db-shell:
 	@echo "Accessing PostgreSQL shell..."
 	$(DOCKER_COMPOSE) exec postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
 clickhouse-shell:
 	@echo "Accessing ClickHouse shell..."
-	docker exec -it clickhouse clickhouse-client
+	docker exec -it clickhouse clickhouse-client --password admin123
 
 init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
-	cat scripts/sql/init_clickhouse.sql | docker exec -i clickhouse clickhouse-client --multiquery
+	cat scripts/sql/init_clickhouse.sql | docker exec -i clickhouse clickhouse-client --password admin123 --multiquery
 	@echo "✓ ClickHouse schema initialized successfully"
 
 init-analytics:
 	@echo "Initializing Analytics (Silver & Gold Layers)..."
-	cat scripts/sql/init_analytics.sql | docker exec -i clickhouse clickhouse-client --multiquery
+	cat scripts/sql/init_analytics.sql | docker exec -i clickhouse clickhouse-client --password admin123 --multiquery
 	@echo "✓ Analytics schema initialized successfully"
+
+init-superset:
+	@echo "Initializing Apache Superset..."
+	docker exec -i superset bash < deployments/docker/init-superset.sh
+	@echo "✓ Superset is initialized and ready to use"
 
 clean-clickhouse:
 	@echo "Dropping all ClickHouse tables and views..."
-	docker exec -i clickhouse clickhouse-client -q "DROP TABLE IF EXISTS cdc_queue; DROP VIEW IF EXISTS users_mv; DROP VIEW IF EXISTS products_mv; DROP VIEW IF EXISTS orders_mv; DROP VIEW IF EXISTS order_items_mv; DROP TABLE IF EXISTS users_history; DROP TABLE IF EXISTS products_history; DROP TABLE IF EXISTS orders_history; DROP TABLE IF EXISTS order_items_history;"
+	docker exec -i clickhouse clickhouse-client --password admin123 -q "\
+		DROP VIEW IF EXISTS analytics_sales_obt; \
+		DROP VIEW IF EXISTS analytics_sales_mv; \
+		DROP VIEW IF EXISTS orders_join_mv; \
+		DROP TABLE IF EXISTS orders_join; \
+		DROP DICTIONARY IF EXISTS dict_users; \
+		DROP DICTIONARY IF EXISTS dict_products; \
+		DROP DICTIONARY IF EXISTS dict_orders; \
+		DROP VIEW IF EXISTS vw_current_users; \
+		DROP VIEW IF EXISTS vw_current_products; \
+		DROP VIEW IF EXISTS vw_current_orders; \
+		DROP VIEW IF EXISTS vw_current_order_items; \
+		DROP VIEW IF EXISTS users_mv; \
+		DROP VIEW IF EXISTS products_mv; \
+		DROP VIEW IF EXISTS orders_mv; \
+		DROP VIEW IF EXISTS order_items_mv; \
+		DROP TABLE IF EXISTS cdc_queue; \
+		DROP TABLE IF EXISTS users_history; \
+		DROP TABLE IF EXISTS products_history; \
+		DROP TABLE IF EXISTS orders_history; \
+		DROP TABLE IF EXISTS order_items_history; \
+		DROP TABLE IF EXISTS analytics_sales_obt;"
 	@echo "✓ ClickHouse environment cleaned"
 
-reset-clickhouse: clean-clickhouse init-clickhouse
+reset-clickhouse: clean-clickhouse init-clickhouse init-analytics
+
+reset-all: drop-slot clean-db clean-clickhouse init-db init-clickhouse init-analytics init-redpanda
+	@echo "🚀 FULL SYSTEM RESET COMPLETE"
+
+full-start:
+	@echo "⚠️ WARNING: This will reset all schemas and may overwrite master data!"
+	@echo "🎬 STARTING INFRASTRUCTURE..."
+	$(DOCKER_COMPOSE) up -d postgres-source clickhouse redpanda superset order-service
+	@echo "⏳ Waiting for databases to be ready (20s)..."
+	sleep 20
+	@echo "⚙️ Initializing Postgres, ClickHouse & Superset..."
+	$(MAKE) init-db
+	$(MAKE) init-clickhouse
+	$(MAKE) init-analytics
+	$(MAKE) init-redpanda
+	$(MAKE) init-superset
+	@echo "🚀 STARTING CDC INGESTOR..."
+	$(DOCKER_COMPOSE) up -d cdc-ingestor
+	sleep 5
+	@echo "🌱 Seeding Master Data (Users & Products)..."
+	docker exec -it order-service python data_generator.py --seed
+	@echo "⏳ Waiting for master data to sync (10s)..."
+	sleep 10
+	@echo "🤖 STARTING TRAFFIC GENERATOR..."
+	$(DOCKER_COMPOSE) up -d traffic-generator
+	@echo "✅ SYSTEM IS UP AND RUNNING!"
+	@echo "💡 Cek OBT: docker exec -it clickhouse clickhouse-client --password admin123 -q 'SELECT * FROM analytics_sales_obt LIMIT 5;'"
+	$(MAKE) logs
+
+# Perintah untuk melanjutkan pekerjaan tanpa menghapus Dashboard/Data
+resume:
+	@echo "🎬 RESUMING ALL SERVICES..."
+	$(DOCKER_COMPOSE) up -d
+	@echo "🚀 RESTARTING INGESTOR..."
+	$(DOCKER_COMPOSE) restart cdc-ingestor traffic-generator
+	@echo "✅ SERVICES ARE RESUMED"
+	$(MAKE) logs
+
+# Matikan tanpa hapus data
+stop:
+	@echo "🛑 STOPPING SERVICES (Data is safe)..."
+	$(DOCKER_COMPOSE) stop
+
+seed-db:
+	@echo "Suntik Data Massal (Seeding) sedang berjalan..."
+	$(DOCKER_COMPOSE) exec -T order-service python data_generator.py --seed
 
 
 logs:

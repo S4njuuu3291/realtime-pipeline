@@ -87,6 +87,7 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_started
+    restart: on-failure
     networks:
       - default
     # Robot Transaksi (Traffic Generator)
@@ -119,5 +120,30 @@ services:
         hard: 262144
     volumes:
       - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
+      - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/users.xml
     networks:
       - default
+
+  # ==========================================
+  # BI / VISUALIZATION LAYER
+  # ==========================================
+  superset:
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: "my_very_secret_key_for_this_project"
+      SUPERSET_LOAD_EXAMPLES: "no"
+    depends_on:
+      - clickhouse
+    networks:
+      - default
+    volumes:
+      - superset_home:/app/superset_home
+      - ./dashboards:/app/dashboards
+
+volumes:
+  superset_home:
