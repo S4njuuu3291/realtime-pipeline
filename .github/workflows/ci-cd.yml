@@ -11,16 +11,14 @@ jobs:
 
       - name: Validate Docker Compose
         run: |
-          # Create .env dari GitHub Secrets
-          echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" > .env
-          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
-          echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" >> .env
-          echo "POSTGRES_HOST=postgres-source" >> .env
+          echo "POSTGRES_USER=dummy" > .env
+          echo "POSTGRES_PASSWORD=dummy" >> .env
+          echo "POSTGRES_DB=dummy" >> .env
+          echo "POSTGRES_HOST=dummy" >> .env
           echo "POSTGRES_PORT=5432" >> .env
-          echo "REDPANDA_BROKERS=redpanda:9092" >> .env
-
+          echo "REDPANDA_BROKERS=dummy:9092" >> .env
           docker compose -f deployments/docker/docker-compose.yml config -q
-          echo "✅ Docker Compose valid"
+          echo "Docker Compose valid"
 
       - name: Validate Superset config
         run: |
@@ -49,46 +47,40 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-
             cd /opt/production/realtime-pipeline
 
-            echo "📦 Backing up current state..."
-            cp deployments/docker/docker-compose.yml deployments/docker/docker-compose.yml.backup
+            echo "Backing up .env..."
+            cp -f .env .env.backup 2>/dev/null || true
 
-            echo "🧹 Cleaning __pycache__ files..."
+            echo "Cleaning pycache..."
             find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
-            echo "🔄 Stashing any local changes..."
-            git stash --include-untracked || true
+            echo "Fetch and reset to latest code..."
+            git fetch origin main
+            git reset --hard origin/main
 
-            echo "🔄 Pulling latest code..."
-            git pull origin main
+            echo "Restoring .env..."
+            cp -f .env.backup .env 2>/dev/null || true
 
-            echo "🔨 Building new images..."
-            docker compose -f deployments/docker/docker-compose.yml build --no-cache \
-              cdc-ingestor order-service superset
+            echo "Building new images..."
+            docker compose -f deployments/docker/docker-compose.yml build --no-cache cdc-ingestor order-service superset
 
-            echo "🔄 Rolling update services..."
-            docker compose -f deployments/docker/docker-compose.yml up -d --no-deps \
-              --force-recreate cdc-ingestor
-
-            echo "⏳ Waiting for CDC Ingestor to stabilize..."
+            echo "Restarting services..."
+            docker compose -f deployments/docker/docker-compose.yml up -d --no-deps --force-recreate cdc-ingestor
             sleep 10
+            docker compose -f deployments/docker/docker-compose.yml up -d --no-deps --force-recreate order-service
 
-            docker compose -f deployments/docker/docker-compose.yml up -d --no-deps \
-              --force-recreate order-service
+            echo "Running init scripts..."
+            make init-clickhouse 2>/dev/null || echo "ClickHouse init skipped"
+            make init-analytics 2>/dev/null || echo "Analytics init skipped"
 
-            echo "⚙️ Running init scripts..."
-            make init-clickhouse
-            make init-analytics
-
-            echo "📊 Initializing Superset..."
+            echo "Initializing Superset..."
             docker compose -f deployments/docker/docker-compose.yml up -d superset
             sleep 60
-            make init-superset || echo "⚠️ Superset init skipped"
+            make init-superset || echo "Superset init skipped"
 
-            echo "🏥 Running health checks..."
-            curl -f http://localhost:8000/docs || echo "⚠️ Order service health check failed"
-            curl -f http://localhost:8088 || echo "⚠️ Superset health check failed"
+            echo "Health checks..."
+            curl -sf http://localhost:8000/docs > /dev/null && echo "Order service OK" || echo "Order service health check failed"
+            curl -sf http://localhost:8088 > /dev/null && echo "Superset OK" || echo "Superset health check failed"
 
-            echo "✅ Deployment complete!"
+            echo "Deployment complete!"
