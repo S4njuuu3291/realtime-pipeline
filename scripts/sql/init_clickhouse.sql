@@ -19,46 +19,74 @@ CREATE TABLE IF NOT EXISTS order_items_history (
     id Int32, order_id Int32, product_id Int32, quantity Int32, unit_price String, operation String, timestamp Int64
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
--- 2. TABEL ANTREAN KAFKA (URUTAN KOLOM SANGAT KRUSIAL)
+-- 2. TABEL ANTREAN KAFKA (DIBUAT LEBIH FLEKSIBEL DENGAN NULLABLE)
 CREATE TABLE IF NOT EXISTS cdc_queue (
-    table_name String,    -- Index 1
-    operation String,     -- Index 2
-    timestamp Int64,      -- Index 3
+    table_name String,
+    operation String,
+    timestamp Int64,
     before Tuple(
-        user Tuple(id Int32, email String, full_name String, created_at String, updated_at String),
-        product Tuple(id Int32, name String, category String, brand String, price String, stock_quantity Int32, created_at String, updated_at String),
-        order Tuple(id Int32, user_id Int32, total_amount String, status String, created_at String, updated_at String),
-        order_item Tuple(id Int32, order_id Int32, product_id Int32, quantity Int32, unit_price String, created_at String)
+        user Tuple(id Nullable(Int32), email Nullable(String), full_name Nullable(String), created_at Nullable(String), updated_at Nullable(String)),
+        product Tuple(id Nullable(Int32), name Nullable(String), category Nullable(String), brand Nullable(String), price Nullable(String), stock_quantity Nullable(Int32), created_at Nullable(String), updated_at Nullable(String)),
+        order Tuple(id Nullable(Int32), user_id Nullable(Int32), total_amount Nullable(String), status Nullable(String), created_at Nullable(String), updated_at Nullable(String)),
+        order_item Tuple(id Nullable(Int32), order_id Nullable(Int32), product_id Nullable(Int32), quantity Nullable(Int32), unit_price Nullable(String), created_at Nullable(String))
     ),
     after Tuple(
-        user Tuple(id Int32, email String, full_name String, created_at String, updated_at String),
-        product Tuple(id Int32, name String, category String, brand String, price String, stock_quantity Int32, created_at String, updated_at String),
-        order Tuple(id Int32, user_id Int32, total_amount String, status String, created_at String, updated_at String),
-        order_item Tuple(id Int32, order_id Int32, product_id Int32, quantity Int32, unit_price String, created_at String)
+        user Tuple(id Nullable(Int32), email Nullable(String), full_name Nullable(String), created_at Nullable(String), updated_at Nullable(String)),
+        product Tuple(id Nullable(Int32), name Nullable(String), category Nullable(String), brand Nullable(String), price Nullable(String), stock_quantity Nullable(Int32), created_at Nullable(String), updated_at Nullable(String)),
+        order Tuple(id Nullable(Int32), user_id Nullable(Int32), total_amount Nullable(String), status Nullable(String), created_at Nullable(String), updated_at Nullable(String)),
+        order_item Tuple(id Nullable(Int32), order_id Nullable(Int32), product_id Nullable(Int32), quantity Nullable(Int32), unit_price Nullable(String), created_at Nullable(String))
     )
 ) ENGINE = Kafka
 SETTINGS 
     kafka_broker_list = 'redpanda:9092',
     kafka_topic_list = 'cdc-events',
-    kafka_group_name = 'clickhouse_cdc_group_v4',
+    kafka_group_name = 'clickhouse_cdc_group_v16', 
     kafka_format = 'ProtobufSingle',
-    kafka_schema = 'event.proto:CDCEvent',
-    kafka_skip_broken_messages = 1;
+    kafka_schema = 'event.proto:cdc.CDCEvent',
+    kafka_skip_broken_messages = 0;
 
--- 3. MATERIALIZED VIEWS
+-- 3. MATERIALIZED VIEWS (DENGAN ASUMSI NOT NULL UNTUK KEAMANAN DATA)
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS users_mv TO users_history AS
-SELECT after.user.id AS id, after.user.email AS email, after.user.full_name AS full_name, after.user.created_at AS created_at, operation, timestamp
+SELECT 
+    assumeNotNull(after.user.id) AS id, 
+    assumeNotNull(after.user.email) AS email, 
+    assumeNotNull(after.user.full_name) AS full_name, 
+    assumeNotNull(after.user.created_at) AS created_at, 
+    operation, 
+    timestamp
 FROM cdc_queue WHERE table_name = 'users';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS products_mv TO products_history AS
-SELECT after.product.id AS id, after.product.name AS name, after.product.category AS category, after.product.brand AS brand, after.product.price AS price, after.product.stock_quantity AS stock_quantity, operation, timestamp
+SELECT 
+    assumeNotNull(after.product.id) AS id, 
+    assumeNotNull(after.product.name) AS name, 
+    assumeNotNull(after.product.category) AS category, 
+    assumeNotNull(after.product.brand) AS brand, 
+    assumeNotNull(after.product.price) AS price, 
+    assumeNotNull(after.product.stock_quantity) AS stock_quantity, 
+    operation, 
+    timestamp
 FROM cdc_queue WHERE table_name = 'products';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS orders_mv TO orders_history AS
-SELECT after.order.id AS id, after.order.user_id AS user_id, after.order.total_amount AS total_amount, after.order.status AS status, operation, timestamp
+SELECT 
+    assumeNotNull(after.order.id) AS id, 
+    assumeNotNull(after.order.user_id) AS user_id, 
+    assumeNotNull(after.order.total_amount) AS total_amount, 
+    assumeNotNull(after.order.status) AS status, 
+    operation, 
+    timestamp
 FROM cdc_queue WHERE table_name = 'orders';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS order_items_mv TO order_items_history AS
-SELECT after.order_item.id AS id, after.order_item.order_id AS order_id, after.order_item.product_id AS product_id, after.order_item.quantity AS quantity, after.order_item.unit_price AS unit_price, operation, timestamp
+SELECT 
+    assumeNotNull(after.order_item.id) AS id, 
+    assumeNotNull(after.order_item.order_id) AS order_id, 
+    assumeNotNull(after.order_item.product_id) AS product_id, 
+    assumeNotNull(after.order_item.quantity) AS quantity, 
+    assumeNotNull(after.order_item.unit_price) AS unit_price, 
+    operation, 
+    timestamp
 FROM cdc_queue WHERE table_name = 'order_items';
+

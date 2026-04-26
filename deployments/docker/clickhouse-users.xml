@@ -1,0 +1,21 @@
+<clickhouse>
+    <users>
+        <default>
+            <!-- Kita paksa user default punya password agar Superset mau konek -->
+            <password>admin123</password>
+            <access_management>1</access_management>
+            <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </default>
+        
+        <superset_user>
+            <password>superset_pass</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+        </superset_user>
+    </users>
+</clickhouse>

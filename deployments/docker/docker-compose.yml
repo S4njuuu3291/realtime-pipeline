@@ -18,7 +18,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1" ]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -65,7 +69,7 @@ services:
       postgres-source:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/docs" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,6 +91,7 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_started
+    restart: on-failure
     networks:
       - default
     # Robot Transaksi (Traffic Generator)
@@ -98,7 +103,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
       PYTHONUNBUFFERED: 1
-    command: [ "python", "data_generator.py", "--traffic" ]
+    command: ["python", "data_generator.py", "--traffic"]
     depends_on:
       order-service:
         condition: service_healthy
@@ -119,5 +124,30 @@ services:
         hard: 262144
     volumes:
       - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
+      - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/users.xml
     networks:
       - default
+
+  # ==========================================
+  # BI / VISUALIZATION LAYER
+  # ==========================================
+  superset:
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: "my_very_secret_key_for_this_project"
+      SUPERSET_LOAD_EXAMPLES: "no"
+    depends_on:
+      - clickhouse
+    networks:
+      - default
+    volumes:
+      - superset_home:/app/superset_home
+      - ./dashboards:/app/dashboards
+
+volumes:
+  superset_home:
