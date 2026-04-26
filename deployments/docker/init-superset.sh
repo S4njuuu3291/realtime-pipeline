@@ -17,14 +17,8 @@ superset init
 
 echo "Registering ClickHouse database..."
 superset set-database-uri \
-    --database-name "ClickHouse" \
+    --database-name "ClickHouse_Connect_Superset" \
     --uri "clickhouse+connect://default:admin123@clickhouse:8123/default" \
-    --skip_create
-
-echo "Registering ClickHouse analytics database..."
-superset set-database-uri \
-    --database-name "ClickHouse (Analytics)" \
-    --uri "clickhouse+connect://default:admin123@clickhouse:8123/analytics" \
     --skip_create
 
 # Auto-import dashboard jika ada file export di folder dashboards
