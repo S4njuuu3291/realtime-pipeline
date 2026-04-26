@@ -3,45 +3,48 @@
 Diagram ini merepresentasikan arsitektur sistem level makro (infrastruktur perangkat lunak). Ini berbeda dengan arsitektur data; diagram ini menunjukkan aplikasi, *database*, dan *tools* apa saja yang digunakan serta bagaimana mereka terhubung dalam suatu *pipeline*.
 
 ```mermaid
-flowchart LR
-    %% Subgraph Styles
-    classDef pg fill:#336791,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef go fill:#00ADD8,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef kafka fill:#1e1e1e,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef ch fill:#FFCC01,stroke:#333,stroke-width:2px,color:#333;
-    classDef bi fill:#00A699,stroke:#fff,stroke-width:2px,color:#fff;
-    
-    subgraph SOURCE ["Source System"]
-        direction TB
-        generator(["Robot Order Generator"])
-        pg_db[("PostgreSQL\n(Transactional DB)")]
+graph LR
+    %% Global Styles
+    classDef storage fill:#2C3E50,stroke:#34495E,stroke-width:2px,color:#ECF0F1;
+    classDef logic fill:#E67E22,stroke:#D35400,stroke-width:2px,color:#fff;
+    classDef broker fill:#1B1B1B,stroke:#333,stroke-width:2px,color:#fff;
+    classDef analytics fill:#F1C40F,stroke:#F39C12,stroke-width:2px,color:#333;
+    classDef visualize fill:#16A085,stroke:#117A65,stroke-width:2px,color:#fff;
+
+    subgraph SOURCE ["1. Source & Transactional"]
+        gen([fa:fa-robot Order Generator])
+        pg[(fa:fa-database PostgreSQL)]
     end
 
-    subgraph STREAMING ["Real-time CDC Streaming"]
-        direction TB
-        go_cdc{{"Go CDC Ingestor\n(Protobuf Serialize)"}}
-        redpanda[("Redpanda / Kafka\n(Message Broker)")]
+    subgraph CDC ["2. Real-time Ingestion"]
+        go{{"fa:fa-code Go CDC Service"}}
     end
 
-    subgraph ANALYTICS ["Data Warehouse & BI"]
-        direction TB
-        ch_dw[("ClickHouse\n(OLAP Medallion)")]
-        superset[["Apache Superset\n(Dashboard)"]]
+    subgraph STREAM ["3. Message Bus"]
+        redpanda[("fa:fa-layer-group Redpanda / Kafka")]
     end
 
-    %% Flow logic
-    generator -- "Simulate E-Commerce\n(Insert/Update)" --> pg_db
-    pg_db -- "Change Data Capture\n(Listen to WAL)" --> go_cdc
-    go_cdc -- "Publish Events\n(Protobuf format)" --> redpanda
-    redpanda -- "Consume Stream\n(Kafka Engine)" --> ch_dw
-    ch_dw -- "Query Analytics\n(Read OBT)" --> superset
+    subgraph WAREHOUSE ["4. Storage & OLAP"]
+        ch[(fa:fa-chart-pie ClickHouse)]
+    end
 
-    %% Styling apply
-    class pg_db pg;
-    class go_cdc go;
-    class redpanda kafka;
-    class ch_dw ch;
-    class superset bi;
+    subgraph BI ["5. Presentation"]
+        superset[["fa:fa-dashboard Apache Superset"]]
+    end
+
+    %% Flow with cleaner labels
+    gen -->|Simulated Activity| pg
+    pg -.->|WAL Log Reading| go
+    go ==>|Protobuf Events| redpanda
+    redpanda ==>|Kafka Engine Stream| ch
+    ch ---|Real-time Query| superset
+
+    %% Class assignment
+    class pg storage;
+    class go logic;
+    class redpanda broker;
+    class ch analytics;
+    class superset visualize;
 ```
 
 ### Penjelasan Komponen Sistem:

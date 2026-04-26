@@ -18,7 +18,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1" ]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -65,7 +69,7 @@ services:
       postgres-source:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/docs" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -99,7 +103,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
       PYTHONUNBUFFERED: 1
-    command: [ "python", "data_generator.py", "--traffic" ]
+    command: ["python", "data_generator.py", "--traffic"]
     depends_on:
       order-service:
         condition: service_healthy

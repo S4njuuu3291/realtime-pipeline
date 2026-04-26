@@ -10,13 +10,32 @@ app = FastAPI()
 fake = Faker()
 
 # --- Database Configuration ---
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql://admin:password@postgres-source:5432/ecom_db"
-)
+def get_db_url():
+    # Coba ambil URL lengkap dulu
+    url = os.getenv("DATABASE_URL")
+    
+    # Jika URL ada tapi password-nya kosong (common issue di docker exec), 
+    if not url or ":@postgres-source" in url:
+        user = os.getenv("POSTGRES_USER", "admin")
+        password = os.getenv("POSTGRES_PASSWORD", "password")
+        host = os.getenv("POSTGRES_HOST", "postgres-source")
+        port = os.getenv("POSTGRES_PORT", "5432")
+        db = os.getenv("POSTGRES_DB", "ecom_db")
+        return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    
+    return url
+
+DATABASE_URL = get_db_url()
 
 # Retry logic agar tidak crash saat nunggu Postgres
-engine = create_engine(DATABASE_URL)
+# Kita tambahkan pool_size dan max_overflow agar tahan banting saat trafik tinggi
+engine = create_engine(
+    DATABASE_URL, 
+    pool_size=20, 
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

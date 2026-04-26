@@ -152,7 +152,7 @@ full-start:
 	@echo "🎬 STARTING INFRASTRUCTURE..."
 	$(DOCKER_COMPOSE) up -d postgres-source clickhouse redpanda superset order-service
 	@echo "⏳ Waiting for databases to be ready (20s)..."
-	sleep 20
+	sleep 5
 	@echo "⚙️ Initializing Postgres, ClickHouse & Superset..."
 	$(MAKE) init-db
 	$(MAKE) init-clickhouse
@@ -186,9 +186,8 @@ stop:
 	@echo "🛑 STOPPING SERVICES (Data is safe)..."
 	$(DOCKER_COMPOSE) stop
 
-seed-db:
-	@echo "Suntik Data Massal (Seeding) sedang berjalan..."
-	$(DOCKER_COMPOSE) exec -T order-service python data_generator.py --seed
+# Alias untuk inisialisasi lengkap
+setup-db: init-db seed-db
 
 
 logs:
@@ -212,6 +211,3 @@ clean:
 
 act-deploy:
 	act -P ubuntu-latest=catthehacker/ubuntu:act-latest --secret-file .secrets --network bridge
-
-setup-db:
-	init-db seed-db
