@@ -69,9 +69,21 @@ jobs:
             docker compose -f deployments/docker/docker-compose.yml down
             sleep 5
             echo "Unsetting system env vars that override .env file..."
-            unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST POSTGRES_PORT
-            docker compose -f deployments/docker/docker-compose.yml up -d
-            sleep 15
+            unset POSTGRES_USER
+            unset POSTGRES_PASSWORD
+            unset POSTGRES_DB
+            unset POSTGRES_HOST
+            unset POSTGRES_PORT
+
+            echo "Starting all services..."
+            docker compose -f deployments/docker/docker-compose.yml up -d --wait 2>&1 || true
+            sleep 5
+
+            echo "Checking container status..."
+            docker ps --format "table {{.Names}}\t{{.Status}}"
+
+            echo "PostgreSQL logs:"
+            docker logs postgres-source --tail 30 2>&1 || echo "Container not found"
 
             echo "Running init scripts..."
             make init-redpanda 2>/dev/null || true
