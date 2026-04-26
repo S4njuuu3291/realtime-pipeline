@@ -62,22 +62,23 @@ jobs:
             echo "Restoring .env..."
             cp -f .env.backup .env 2>/dev/null || true
 
-            echo "Building new images..."
-            docker compose -f deployments/docker/docker-compose.yml build --no-cache cdc-ingestor order-service superset
+            echo "Building all images..."
+            docker compose -f deployments/docker/docker-compose.yml build --no-cache
 
-            echo "Restarting services..."
-            docker compose -f deployments/docker/docker-compose.yml up -d --no-deps --force-recreate cdc-ingestor
-            sleep 10
-            docker compose -f deployments/docker/docker-compose.yml up -d --no-deps --force-recreate order-service
+            echo "Full system reset and restart..."
+            docker compose -f deployments/docker/docker-compose.yml down
+            sleep 5
+            docker compose -f deployments/docker/docker-compose.yml up -d
+            sleep 15
 
             echo "Running init scripts..."
-            make init-clickhouse 2>/dev/null || echo "ClickHouse init skipped"
-            make init-analytics 2>/dev/null || echo "Analytics init skipped"
+            make init-redpanda 2>/dev/null || true
+            make init-clickhouse 2>/dev/null || true
+            make init-analytics 2>/dev/null || true
 
             echo "Initializing Superset..."
-            docker compose -f deployments/docker/docker-compose.yml up -d superset
-            sleep 60
-            make init-superset || echo "Superset init skipped"
+            sleep 30
+            make init-superset 2>/dev/null || echo "Superset init skipped"
 
             echo "Health checks..."
             curl -sf http://localhost:8000/docs > /dev/null && echo "Order service OK" || echo "Order service health check failed"
