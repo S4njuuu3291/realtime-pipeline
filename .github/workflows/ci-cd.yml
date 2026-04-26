@@ -11,6 +11,14 @@ jobs:
 
       - name: Validate Docker Compose
         run: |
+          # Create .env dari GitHub Secrets
+          echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" > .env
+          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+          echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" >> .env
+          echo "POSTGRES_HOST=postgres-source" >> .env
+          echo "POSTGRES_PORT=5432" >> .env
+          echo "REDPANDA_BROKERS=redpanda:9092" >> .env
+
           docker compose -f deployments/docker/docker-compose.yml config -q
           echo "✅ Docker Compose valid"
 
