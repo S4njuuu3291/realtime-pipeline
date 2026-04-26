@@ -55,6 +55,12 @@ jobs:
             echo "📦 Backing up current state..."
             cp deployments/docker/docker-compose.yml deployments/docker/docker-compose.yml.backup
 
+            echo "🧹 Cleaning __pycache__ files..."
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+            echo "🔄 Stashing any local changes..."
+            git stash --include-untracked || true
+
             echo "🔄 Pulling latest code..."
             git pull origin main
 
