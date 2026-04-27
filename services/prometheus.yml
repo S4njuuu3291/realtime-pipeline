@@ -1,0 +1,34 @@
+# ==============================================================
+# TEORI: prometheus.yml
+# ==============================================================
+# File ini adalah "daftar kunjungan" Prometheus.
+# Prometheus akan mendatangi service-service yang terdaftar
+# di `scrape_configs` secara berkala untuk mengambil metrik.
+#
+# Konsep penting:
+#   - `scrape_interval`:  seberapa sering Prometheus dateng
+#   - `job_name`:         label logis untuk grup service
+#   - `targets`:         alamat service yang dituju (host:port)
+#   - `static_configs`:  target ditulis manual (vs service discovery)
+#
+# Prometheus HARUS bisa network reach ke target.
+# Kalau target mati atau tidak reachable, grafik di Grafana putus.
+# ==============================================================
+
+global:
+  scrape_interval: 15s # Dateng tiap 15 detik
+  evaluation_interval: 15s # Evaluasi aturan alert tiap 15 detik
+
+scrape_configs:
+  # Job 1: Prometheus → memonitor dirinya sendiri
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+        # localhost:9090 -> endpoint /metrics bawaan Prometheus
+
+  # Job 2: Node Exporter → metrik OS (CPU, memory, disk, network)
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        # node-exporter:9100 -> nama service di docker compose
+        # Prometheus akan scrape http://node-exporter:9100/metrics

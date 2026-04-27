@@ -62,8 +62,13 @@ jobs:
             echo "Restoring .env from temp..."
             cp -f /tmp/realtime-pipeline.env.bak .env 2>/dev/null || true
 
-            echo "Building all images..."
-            docker compose --env-file .env -f deployments/docker/docker-compose.yml build --no-cache
+            echo "Verifying Grafana provisioning files..."
+            test -f services/grafana/provisioning/datasources/datasource.yml && echo "  ✅ datasource.yml" || echo "  ⚠️ datasource.yml missing"
+            test -f services/grafana/provisioning/dashboards/dashboards.yml && echo "  ✅ dashboards.yml" || echo "  ⚠️ dashboards.yml missing"
+            ls services/grafana/dashboards/*.json 2>/dev/null && echo "  ✅ dashboard JSON files found" || echo "  ⚠️ No dashboard JSON files found"
+
+            echo "Building images..."
+            docker compose --env-file .env -f deployments/docker/docker-compose.yml build --no-cache cdc-ingestor order-service traffic-generator
 
             echo "Unsetting system env vars that override .env file..."
             unset POSTGRES_USER
@@ -104,7 +109,10 @@ jobs:
             make init-superset 2>/dev/null || echo "Superset init skipped"
 
             echo "Health checks..."
-            curl -sf http://localhost:8000/docs > /dev/null && echo "Order service OK" || echo "Order service health check failed"
-            curl -sf http://localhost:8088 > /dev/null && echo "Superset OK" || echo "Superset health check failed"
+            curl -sf http://localhost:8000/docs > /dev/null && echo "  ✅ Order service" || echo "  ⚠️ Order service"
+            curl -sf http://localhost:8088 > /dev/null && echo "  ✅ Superset" || echo "  ⚠️ Superset"
+            curl -sf http://localhost:9090/-/healthy > /dev/null && echo "  ✅ Prometheus" || echo "  ⚠️ Prometheus"
+            curl -sf http://localhost:3000/api/health > /dev/null && echo "  ✅ Grafana" || echo "  ⚠️ Grafana"
+            curl -sf http://localhost:9100/metrics > /dev/null && echo "  ✅ Node Exporter" || echo "  ⚠️ Node Exporter"
 
             echo "Deployment complete!"

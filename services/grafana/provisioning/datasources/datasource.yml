@@ -1,0 +1,24 @@
+# ==============================================================
+# TEORI: Grafana Datasource
+# ==============================================================
+# Grafana tidak punya data sendiri. Dia perlu tahu ke mana
+# harus bertanya data. File ini mendaftarkan Prometheus sebagai
+# "sumber data" (datasource) utama.
+#
+# Konsep penting:
+#   - `url`: alamat Prometheus (dalam docker = nama service)
+#   - `type`: jenis datasource (prometheus, postgres, dll)
+#   - `isDefault`: datasource utama, dipakai otomatis
+#
+# Grafana bisa punya banyak datasource sekaligus (Prometheus,
+# PostgreSQL, MySQL, CSV, dll) dalam satu dashboard.
+# ==============================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
