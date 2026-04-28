@@ -31,8 +31,8 @@ DATABASE_URL = get_db_url()
 # Kita tambahkan pool_size dan max_overflow agar tahan banting saat trafik tinggi
 engine = create_engine(
     DATABASE_URL, 
-    pool_size=20, 
-    max_overflow=10,
+    pool_size=60, 
+    max_overflow=30,
     pool_timeout=30,
     pool_recycle=1800
 )
