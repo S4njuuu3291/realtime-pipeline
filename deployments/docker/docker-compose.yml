@@ -208,7 +208,6 @@ services:
     command:
       - "--collector.long_running_transactions"
       - "--collector.stat_wal_receiver"
-      - "--collector.stat_wal"
     ports:
       - "9187:9187"
     networks:
