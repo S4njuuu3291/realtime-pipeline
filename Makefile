@@ -150,7 +150,7 @@ reset-all: drop-slot clean-db clean-clickhouse init-db init-clickhouse init-anal
 full-start:
 	@echo "⚠️ WARNING: This will reset all schemas and may overwrite master data!"
 	@echo "🎬 STARTING INFRASTRUCTURE..."
-	$(DOCKER_COMPOSE) up -d postgres-source clickhouse redpanda superset order-service
+	$(DOCKER_COMPOSE) up -d
 	@echo "⏳ Waiting for databases to be ready (20s)..."
 	sleep 5
 	@echo "🧹 Dropping old replication slot..."
@@ -171,8 +171,6 @@ full-start:
 	@echo "🤖 STARTING TRAFFIC GENERATOR..."
 	$(DOCKER_COMPOSE) up -d traffic-generator
 	@echo "✅ SYSTEM IS UP AND RUNNING!"
-	@echo "💡 Cek OBT: docker exec -it clickhouse clickhouse-client --password admin123 -q 'SELECT * FROM analytics_sales_obt LIMIT 5;'"
-	$(MAKE) logs
 
 # Perintah untuk melanjutkan pekerjaan tanpa menghapus Dashboard/Data
 resume:
