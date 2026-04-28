@@ -49,73 +49,67 @@ jobs:
             set -e
             cd /opt/production/realtime-pipeline
 
-            # ── 1. AMANKAN .env ──────────────────────────────────────────────
-            echo "Backing up .env to temp..."
+            echo "🔄 Backing up .env..."
             cp -f .env /tmp/realtime-pipeline.env.bak 2>/dev/null || true
 
-            echo "Cleaning pycache..."
+            echo "🧹 Cleaning pycache..."
             find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
-            echo "Fetch and reset to latest code..."
+            echo "📥 Fetching latest code..."
             git fetch origin main
             git reset --hard origin/main
 
-            echo "Restoring .env from temp..."
+            echo "🔐 Restoring .env..."
             cp -f /tmp/realtime-pipeline.env.bak .env 2>/dev/null || true
 
-            echo "Verifying Grafana provisioning files..."
-            test -f services/grafana/provisioning/datasources/datasource.yml && echo "  ✅ datasource.yml" || echo "  ⚠️ datasource.yml missing"
-            test -f services/grafana/provisioning/dashboards/dashboards.yml && echo "  ✅ dashboards.yml" || echo "  ⚠️ dashboards.yml missing"
-            ls services/grafana/dashboards/*.json 2>/dev/null && echo "  ✅ dashboard JSON files found" || echo "  ⚠️ No dashboard JSON files found"
+            echo "✅ Verifying Grafana provisioning..."
+            test -f services/grafana/provisioning/datasources/datasource.yml && echo "  ✅ datasource.yml"
+            test -f services/grafana/provisioning/dashboards/dashboards.yml && echo "  ✅ dashboards.yml"
+            ls services/grafana/dashboards/*.json 2>/dev/null && echo "  ✅ dashboard JSON files found"
 
-            # ── 2. DETEKSI FIRST DEPLOY vs UPDATE ──────────────────────────
+            # ── CEK APAKAH FIRST DEPLOY ────────────────────────
             if docker compose --env-file .env -f deployments/docker/docker-compose.yml ps --services --filter "status=running" 2>/dev/null | grep -q .; then
-              echo "  ✅ Existing deployment — performing NON-DESTRUCTIVE update"
+              echo "  ✅ Existing deployment — NON-DESTRUCTIVE UPDATE"
               IS_FIRST_DEPLOY=false
             else
-              echo "  🆕 First deployment — performing FULL initial setup"
+              echo "  🆕 First deployment — FULL SETUP"
               IS_FIRST_DEPLOY=true
             fi
 
-            # ── 3. BUILD ────────────────────────────────────────────────────
-            echo "Building images..."
+            echo "🏗️ Building images..."
             docker compose --env-file .env -f deployments/docker/docker-compose.yml build --no-cache cdc-ingestor order-service traffic-generator
 
-            echo "Unsetting system env vars that override .env file..."
+            echo "🧹 Unsetting env overrides..."
             unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST POSTGRES_PORT
 
-            # ── 4A. FIRST DEPLOY PATH ──────────────────────────────────────
             if [ "$IS_FIRST_DEPLOY" = true ]; then
-              echo "🎬 Running full-start..."
               make full-start
-              echo ""
               echo "✅ FIRST DEPLOY COMPLETE"
               exit 0
             fi
 
-            # ── 4B. NON-DESTRUCTIVE UPDATE PATH ─────────────────────────────
-            echo "Tearing down containers (volumes preserved)..."
-            docker compose --env-file .env -f deployments/docker/docker-compose.yml down
-            sleep 3
+            # ── NON-DESTRUCTIVE: stop, NOT down! ───────────────
+            echo "🛑 Stopping services (containers & networks preserved)..."
+            docker compose --env-file .env -f deployments/docker/docker-compose.yml stop
+            sleep 5
 
-            echo "Starting all services..."
+            echo "🚀 Starting services (recreates containers with new images)..."
             docker compose --env-file .env -f deployments/docker/docker-compose.yml up -d --wait 2>&1 || true
-            sleep 10
+            sleep 15
 
-            echo "Checking container status..."
+            echo "📊 Container status:"
             docker ps --format "table {{.Names}}\t{{.Status}}"
 
-            echo "Restarting CDC Ingestor (reuses existing slot)..."
+            echo "🔄 Restarting CDC Ingestor (reuses existing slot)..."
             docker compose --env-file .env -f deployments/docker/docker-compose.yml restart cdc-ingestor
             sleep 5
 
-            echo "Initializing Superset..."
+            echo "📊 Initializing Superset..."
             sleep 30
             make init-superset 2>/dev/null || echo "Superset init skipped"
 
-            # ── 5. HEALTH CHECKS ────────────────────────────────────────────
             echo ""
-            echo "Health checks..."
+            echo "🔍 Health checks..."
             curl -sf http://localhost:8000/docs > /dev/null && echo "  ✅ Order service" || echo "  ⚠️ Order service"
             curl -sf http://localhost:8088 > /dev/null && echo "  ✅ Superset" || echo "  ⚠️ Superset"
             curl -sf http://localhost:9090/-/healthy > /dev/null && echo "  ✅ Prometheus" || echo "  ⚠️ Prometheus"
