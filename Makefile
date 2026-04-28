@@ -9,7 +9,7 @@ DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-com
 POSTGRES_USER ?= admin
 POSTGRES_DB ?= ecom_db
 
-.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script
 
 help:
 	@echo "Enterprise CDC Pipeline - Available Commands"
@@ -189,6 +189,13 @@ stop:
 # Alias untuk inisialisasi lengkap
 setup-db: init-db seed-db
 
+
+export-dashboard:
+	@echo "📤 Exporting dashboard from Dev to provisioning..."
+	python3 -m scripts.export-dashboard
+	@echo "✓ Dashboard export complete. Now reloading"
+	curl -X POST http://admin:admin@localhost:3000/api/admin/provisioning/dashboards/reload
+	@echo "✓ Dashboard reloaded!"
 
 logs:
 	$(DOCKER_COMPOSE) logs -f

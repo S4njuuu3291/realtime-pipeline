@@ -32,3 +32,13 @@ scrape_configs:
       - targets: ["node-exporter:9100"]
         # node-exporter:9100 -> nama service di docker compose
         # Prometheus akan scrape http://node-exporter:9100/metrics
+
+  # Job 3: Redpanda → metrik Kafka
+  - job_name: "redpanda"
+    static_configs:
+      - targets: ["redpanda:9644"]
+
+  # Job 4: PostgreSQL → metrik database (via postgres exporter)
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]

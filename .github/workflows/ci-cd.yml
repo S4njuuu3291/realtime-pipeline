@@ -49,6 +49,7 @@ jobs:
             set -e
             cd /opt/production/realtime-pipeline
 
+            # ── 1. AMANKAN .env ──────────────────────────────────────────────
             echo "Backing up .env to temp..."
             cp -f .env /tmp/realtime-pipeline.env.bak 2>/dev/null || true
 
@@ -67,18 +68,34 @@ jobs:
             test -f services/grafana/provisioning/dashboards/dashboards.yml && echo "  ✅ dashboards.yml" || echo "  ⚠️ dashboards.yml missing"
             ls services/grafana/dashboards/*.json 2>/dev/null && echo "  ✅ dashboard JSON files found" || echo "  ⚠️ No dashboard JSON files found"
 
+            # ── 2. DETEKSI FIRST DEPLOY vs UPDATE ──────────────────────────
+            if docker compose --env-file .env -f deployments/docker/docker-compose.yml ps --services --filter "status=running" 2>/dev/null | grep -q .; then
+              echo "  ✅ Existing deployment — performing NON-DESTRUCTIVE update"
+              IS_FIRST_DEPLOY=false
+            else
+              echo "  🆕 First deployment — performing FULL initial setup"
+              IS_FIRST_DEPLOY=true
+            fi
+
+            # ── 3. BUILD ────────────────────────────────────────────────────
             echo "Building images..."
             docker compose --env-file .env -f deployments/docker/docker-compose.yml build --no-cache cdc-ingestor order-service traffic-generator
 
             echo "Unsetting system env vars that override .env file..."
-            unset POSTGRES_USER
-            unset POSTGRES_PASSWORD
-            unset POSTGRES_DB
-            unset POSTGRES_HOST
-            unset POSTGRES_PORT
+            unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST POSTGRES_PORT
 
-            echo "Stopping services (keeping volumes)..."
-            docker compose --env-file .env -f deployments/docker/docker-compose.yml stop
+            # ── 4A. FIRST DEPLOY PATH ──────────────────────────────────────
+            if [ "$IS_FIRST_DEPLOY" = true ]; then
+              echo "🎬 Running full-start..."
+              make full-start
+              echo ""
+              echo "✅ FIRST DEPLOY COMPLETE"
+              exit 0
+            fi
+
+            # ── 4B. NON-DESTRUCTIVE UPDATE PATH ─────────────────────────────
+            echo "Tearing down containers (volumes preserved)..."
+            docker compose --env-file .env -f deployments/docker/docker-compose.yml down
             sleep 3
 
             echo "Starting all services..."
@@ -88,19 +105,7 @@ jobs:
             echo "Checking container status..."
             docker ps --format "table {{.Names}}\t{{.Status}}"
 
-            echo "Dropping old replication slot (if exists)..."
-            docker exec postgres-source psql -U admin -d ecom_db -c "SELECT pg_drop_replication_slot('cdc_slot')" 2>/dev/null || true
-
-            echo "Running init scripts..."
-            make init-db 2>/dev/null || true
-            make init-clickhouse 2>/dev/null || true
-            make init-analytics 2>/dev/null || true
-
-            echo "Waiting for order-service to be ready..."
-            sleep 15
-            make seed-db 2>/dev/null || true
-
-            echo "Restarting CDC Ingestor to pick up new slot..."
+            echo "Restarting CDC Ingestor (reuses existing slot)..."
             docker compose --env-file .env -f deployments/docker/docker-compose.yml restart cdc-ingestor
             sleep 5
 
@@ -108,11 +113,15 @@ jobs:
             sleep 30
             make init-superset 2>/dev/null || echo "Superset init skipped"
 
+            # ── 5. HEALTH CHECKS ────────────────────────────────────────────
+            echo ""
             echo "Health checks..."
             curl -sf http://localhost:8000/docs > /dev/null && echo "  ✅ Order service" || echo "  ⚠️ Order service"
             curl -sf http://localhost:8088 > /dev/null && echo "  ✅ Superset" || echo "  ⚠️ Superset"
             curl -sf http://localhost:9090/-/healthy > /dev/null && echo "  ✅ Prometheus" || echo "  ⚠️ Prometheus"
             curl -sf http://localhost:3000/api/health > /dev/null && echo "  ✅ Grafana" || echo "  ⚠️ Grafana"
             curl -sf http://localhost:9100/metrics > /dev/null && echo "  ✅ Node Exporter" || echo "  ⚠️ Node Exporter"
+            docker ps --filter "name=cdc-ingestor" --format "{{.Names}}\t{{.Status}}" | grep -q "Up" && echo "  ✅ CDC Ingestor" || echo "  ⚠️ CDC Ingestor"
 
-            echo "Deployment complete!"
+            echo ""
+            echo "✅ NON-DESTRUCTIVE DEPLOYMENT COMPLETE!"
