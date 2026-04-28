@@ -153,19 +153,21 @@ full-start:
 	$(DOCKER_COMPOSE) up -d postgres-source clickhouse redpanda superset order-service
 	@echo "⏳ Waiting for databases to be ready (20s)..."
 	sleep 5
+	@echo "🧹 Dropping old replication slot..."
+	-$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT pg_drop_replication_slot('cdc_slot');" 2>/dev/null || true
 	@echo "⚙️ Initializing Postgres, ClickHouse & Superset..."
 	$(MAKE) init-db
 	$(MAKE) init-clickhouse
 	$(MAKE) init-analytics
 	$(MAKE) init-redpanda
 	$(MAKE) init-superset
+	@echo "🌱 Seeding Master Data (Users & Products)..."
+	docker exec order-service python data_generator.py --seed
+	@echo "⏳ Waiting for master data to sync (10s)..."
+	sleep 10
 	@echo "🚀 STARTING CDC INGESTOR..."
 	$(DOCKER_COMPOSE) up -d cdc-ingestor
 	sleep 5
-	@echo "🌱 Seeding Master Data (Users & Products)..."
-	docker exec -it order-service python data_generator.py --seed
-	@echo "⏳ Waiting for master data to sync (10s)..."
-	sleep 10
 	@echo "🤖 STARTING TRAFFIC GENERATOR..."
 	$(DOCKER_COMPOSE) up -d traffic-generator
 	@echo "✅ SYSTEM IS UP AND RUNNING!"
