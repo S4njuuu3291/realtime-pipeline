@@ -9,7 +9,7 @@ DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-com
 POSTGRES_USER ?= admin
 POSTGRES_DB ?= ecom_db
 
-.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg init-redpanda init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
 
 help:
 	@echo "Enterprise CDC Pipeline - Available Commands"
@@ -118,7 +118,7 @@ init-superset:
 
 clean-clickhouse:
 	@echo "Dropping all ClickHouse tables and views..."
-	docker exec -i clickhouse clickhouse-client --password admin123 -q "\
+	docker exec -i clickhouse clickhouse-client --password admin123 -q " \
 		DROP VIEW IF EXISTS analytics_sales_obt; \
 		DROP VIEW IF EXISTS analytics_sales_mv; \
 		DROP VIEW IF EXISTS orders_join_mv; \
@@ -146,31 +146,6 @@ reset-clickhouse: clean-clickhouse init-clickhouse init-analytics
 
 reset-all: drop-slot clean-db clean-clickhouse init-db init-clickhouse init-analytics init-redpanda
 	@echo "🚀 FULL SYSTEM RESET COMPLETE"
-
-full-start:
-	@echo "⚠️ WARNING: This will reset all schemas and may overwrite master data!"
-	@echo "🎬 STARTING INFRASTRUCTURE..."
-	$(DOCKER_COMPOSE) up -d
-	@echo "⏳ Waiting for databases to be ready (20s)..."
-	sleep 5
-	@echo "🧹 Dropping old replication slot..."
-	-$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT pg_drop_replication_slot('cdc_slot');" 2>/dev/null || true
-	@echo "⚙️ Initializing Postgres, ClickHouse & Superset..."
-	$(MAKE) init-db
-	$(MAKE) init-clickhouse
-	$(MAKE) init-analytics
-	$(MAKE) init-redpanda
-	$(MAKE) init-superset
-	@echo "🌱 Seeding Master Data (Users & Products)..."
-	docker exec order-service python data_generator.py --seed
-	@echo "⏳ Waiting for master data to sync (10s)..."
-	sleep 10
-	@echo "🚀 STARTING CDC INGESTOR..."
-	$(DOCKER_COMPOSE) up -d cdc-ingestor
-	sleep 5
-	@echo "🤖 STARTING TRAFFIC GENERATOR..."
-	$(DOCKER_COMPOSE) up -d traffic-generator
-	@echo "✅ SYSTEM IS UP AND RUNNING!"
 
 # Perintah untuk melanjutkan pekerjaan tanpa menghapus Dashboard/Data
 resume:
@@ -203,6 +178,13 @@ logs:
 logs-cdc:
 	$(DOCKER_COMPOSE) logs -f cdc-ingestor
 
+logs-tg:
+	# tail 20 lines of logs and follow
+	$(DOCKER_COMPOSE) logs --tail=20 --follow traffic-generator
+
+docker-logs-os:
+	$(DOCKER_COMPOSE) logs order-service
+
 turn-on-cdc:
 	$(DOCKER_COMPOSE) up -d --build cdc-ingestor
 
@@ -218,3 +200,8 @@ clean:
 
 act-deploy:
 	act -P ubuntu-latest=catthehacker/ubuntu:act-latest --secret-file .secrets --network bridge
+
+
+# ========================= K8S =========================
+k8s-db-shell:
+	minikube kubectl -- exec -it postgres-source-0 -- psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)

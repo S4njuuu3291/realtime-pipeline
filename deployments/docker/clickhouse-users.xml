@@ -1,21 +1,32 @@
 <clickhouse>
     <users>
+        <!-- User admin: buat operasi DDL (create table, dll) -->
         <default>
-            <!-- Kita paksa user default punya password agar Superset mau konek -->
             <password>admin123</password>
             <access_management>1</access_management>
-            <allow_experimental_nullable_tuple_type>1</allow_experimental_nullable_tuple_type>
             <networks>
                 <ip>::/0</ip>
             </networks>
         </default>
-        
+
+        <!-- User khusus Superset: READ ONLY -->
         <superset_user>
             <password>superset_pass</password>
             <networks>
                 <ip>::/0</ip>
             </networks>
-            <profile>default</profile>
+            <profile>readonly</profile>
         </superset_user>
     </users>
+
+    <!-- Profile readonly: cuma boleh SELECT -->
+    <profiles>
+        <readonly>
+            <readonly>2</readonly>
+            <!--
+                readonly=1 → hanya SELECT
+                readonly=2 → SELECT + SETTINGS (buat Superset butuh ini)
+            -->
+        </readonly>
+    </profiles>
 </clickhouse>

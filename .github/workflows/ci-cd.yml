@@ -117,5 +117,7 @@ jobs:
             curl -sf http://localhost:9100/metrics > /dev/null && echo "  ✅ Node Exporter" || echo "  ⚠️ Node Exporter"
             docker ps --filter "name=cdc-ingestor" --format "{{.Names}}\t{{.Status}}" | grep -q "Up" && echo "  ✅ CDC Ingestor" || echo "  ⚠️ CDC Ingestor"
 
+            curl -X POST http://admin:admin@217.217.254.119:3000/api/admin/provisioning/dashboards/reload
+
             echo ""
             echo "✅ NON-DESTRUCTIVE DEPLOYMENT COMPLETE!"
