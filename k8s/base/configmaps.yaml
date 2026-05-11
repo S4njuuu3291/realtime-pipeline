@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-health
+data:
+  readiness-check.sh: |
+    #!/bin/bash
+    pg_isready -U admin -d statefuldb 2>/dev/null
+    exit $?
+  liveness-check.sh: |
+    #!/bin/bash
+    pg_isready -U admin -d statefuldb 2>/dev/null
+    exit $?

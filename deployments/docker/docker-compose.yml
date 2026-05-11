@@ -41,6 +41,9 @@ services:
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
       - --advertise-kafka-addr
         internal://redpanda:9092,external://localhost:19092
+
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
     ports:
       - "19092:19092"
     networks:
@@ -127,6 +130,7 @@ services:
         soft: 262144
         hard: 262144
     volumes:
+      - clickhouse_data:/var/lib/clickhouse
       - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
       - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/users.xml
     networks:
@@ -221,6 +225,8 @@ volumes:
   postgres_data:
   superset_home:
   grafana-data:
+  redpanda_data:
+  clickhouse_data:
 
 networks:
   observability:

@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-source
+spec:
+  serviceName: postgres-source
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-source
+  template:
+    metadata:
+      labels:
+        app: postgres-source
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: cdc-secret
+                  key: POSTGRES_DB
+          args:
+            - -c
+            - wal_level=logical
+            - -c
+            - max_replication_slots=5
+            - -c
+            - max_wal_senders=5
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: health-scripts
+              mountPath: /health
+          startupProbe:
+            exec:
+              command: ["bash", "/health/readiness-check.sh"]
+            periodSeconds: 5
+            failureThreshold: 30 # Maks 150 detik untuk startup
+          # Liveness: cek PostgreSQL masih hidup
+          livenessProbe:
+            exec:
+              command: ["bash", "/health/liveness-check.sh"]
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness: cek PostgreSQL bisa terima koneksi
+          readinessProbe:
+            exec:
+              command: ["bash", "/health/readiness-check.sh"]
+            periodSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: health-scripts
+          configMap:
+            name: postgres-health
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
