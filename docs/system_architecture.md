@@ -3,64 +3,64 @@
 Diagram ini merepresentasikan arsitektur sistem level makro (infrastruktur perangkat lunak). Ini berbeda dengan arsitektur data; diagram ini menunjukkan aplikasi, *database*, dan *tools* apa saja yang digunakan serta bagaimana mereka terhubung dalam suatu *pipeline*.
 
 ```mermaid
-graph LR
+graph TB
     %% Global Styles
     classDef source fill:#3498DB,stroke:#2980B9,stroke-width:2px,color:#fff;
-    classDef storage fill:#2C3E50,stroke:#1A252F,stroke-width:2px,color:#fff;
     classDef logic fill:#E67E22,stroke:#D35400,stroke-width:2px,color:#fff;
     classDef broker fill:#8E44AD,stroke:#6C3483,stroke-width:2px,color:#fff;
     classDef analytics fill:#F1C40F,stroke:#F39C12,stroke-width:2px,color:#333;
     classDef visualize fill:#1ABC9C,stroke:#16A085,stroke-width:2px,color:#fff;
     classDef monitor fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff;
+    classDef groupTitle fill:#F8F9FA,stroke:#CCC,stroke-width:1px,color:#333;
 
-    subgraph SOURCE ["1. Source & Transactional"]
-        gen([fa:fa-robot Order Generator])
-        pg[(fa:fa-database PostgreSQL)]
+    subgraph SOURCE["1. Source & Transactional"]
+        direction TB
+        gen(["🖥️  Order Generator (Faker)"]) --> pg[("🐘  PostgreSQL WAL")]       
     end
+    class SOURCE groupTitle;
 
-    subgraph CDC ["2. Real-time Ingestion"]
-        go{{"fa:fa-code Go CDC Ingestor"}}
+    subgraph INGESTION["2. Real-time Ingestion"]
+        go{{"⚙️  Go CDC Ingestor"}}
     end
+    class INGESTION groupTitle;
 
-    subgraph STREAM ["3. Message Bus"]
-        redpanda[("fa:fa-layer-group Redpanda / Kafka")]
+    subgraph BROKER["3. Message Bus"]
+        redpanda[("📦  Redpanda / Kafka")]
     end
+    class BROKER groupTitle;
 
-    subgraph WAREHOUSE ["4. Storage & OLAP"]
-        ch[(fa:fa-chart-bar ClickHouse)]
+    subgraph WAREHOUSE["4. Storage & OLAP"]
+        ch[("📊  ClickHouse")]
     end
+    class WAREHOUSE groupTitle;
 
-    subgraph BI ["5. Presentation"]
-        superset[["fa:fa-dashboard Apache Superset"]]
+    subgraph BI["5. Presentation"]
+        superset[["📈  Apache Superset"]]
     end
+    class BI groupTitle;
 
-    subgraph OBSERVABILITY ["6. Observability"]
-        prom[("fa:fa-chart-line Prometheus")]
-        grafana{{"fa:fa-eye Grafana"}}
-        node_exporter[fa:fa-server Node Exporter]
-        pg_exporter[fa:fa-database Postgres Exporter]
+    subgraph OBSERVABILITY["6. Observability"]
+        direction TB
+        node_exporter[🔧 Node Exporter] -.->|Hardware Metrics| prom[("📉  Prometheus")]
+        pg_exporter[🐘 Postgres Exporter] -.->|Postgres Metrics| prom
+        prom ---|Data Source| grafana{{"👁️  Grafana"}}
     end
+    class OBSERVABILITY groupTitle;
 
-    %% Flow pipeline (solid)
-    gen -->|Simulated Activity| pg
+    %% Main Pipeline Flow
     pg -.->|WAL Logical Replication| go
     go ==>|Protobuf Events| redpanda
     redpanda ==>|Kafka Engine Stream| ch
     ch ---|Real-time Query| superset
 
-    %% Flow observability (dashed)
-    node_exporter -.->|Hardware Metrics| prom
-    pg_exporter -.->|Postgres Metrics| prom
-    prom -.->|Scrape| prom
-    prom ---|Data Source| grafana
-
     %% Class assignment
-    class gen,pg source;
+    class gen source;
+    class pg source;
     class go logic;
     class redpanda broker;
     class ch analytics;
     class superset visualize;
-    class prom,grafana,node_exporter,pg_exporter monitor;
+    class node_exporter,pg_exporter,prom,grafana monitor;
 ```
 
 ### Penjelasan Komponen Sistem:
