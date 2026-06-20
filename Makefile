@@ -99,26 +99,26 @@ db-shell:
 
 clickhouse-shell:
 	@echo "Accessing ClickHouse shell..."
-	docker exec -it clickhouse clickhouse-client --password admin123
+	docker exec -it docker-clickhouse-1 clickhouse-client --password admin123
 
 init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
-	cat scripts/sql/init_clickhouse.sql | docker exec -i clickhouse clickhouse-client --password admin123 --multiquery
+	cat scripts/sql/init_clickhouse.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 --multiquery
 	@echo "✓ ClickHouse schema initialized successfully"
 
 init-analytics:
 	@echo "Initializing Analytics (Silver & Gold Layers)..."
-	cat scripts/sql/init_analytics.sql | docker exec -i clickhouse clickhouse-client --password admin123 --multiquery
+	cat scripts/sql/init_analytics.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 --multiquery
 	@echo "✓ Analytics schema initialized successfully"
 
 init-superset:
 	@echo "Initializing Apache Superset..."
-	docker exec -i superset bash < deployments/docker/init-superset.sh
+	docker exec -i docker-superset-1 bash < deployments/docker/init-superset.sh
 	@echo "✓ Superset is initialized and ready to use"
 
 clean-clickhouse:
 	@echo "Dropping all ClickHouse tables and views..."
-	docker exec -i clickhouse clickhouse-client --password admin123 -q " \
+	docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 -q " \
 		DROP VIEW IF EXISTS analytics_sales_obt; \
 		DROP VIEW IF EXISTS analytics_sales_mv; \
 		DROP VIEW IF EXISTS orders_join_mv; \
@@ -186,7 +186,7 @@ docker-logs-os:
 	$(DOCKER_COMPOSE) logs order-service
 
 turn-on-cdc:
-	$(DOCKER_COMPOSE) up -d --build cdc-ingestor
+	$(DOCKER_COMPOSE) up -d cdc-ingestor
 
 turn-off-cdc:
 	$(DOCKER_COMPOSE) rm -s -f cdc-ingestor

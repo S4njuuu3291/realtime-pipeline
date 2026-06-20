@@ -16,7 +16,7 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 | **Ingestion** | CDC Ingestor (Go) | Baca WAL → serialize Protobuf → kirim ke Redpanda |
 | **Message Broker** | Redpanda (Kafka) | Buffer pesan dengan 3 partisi |
 | **Warehouse** | ClickHouse | OLAP dengan CDC Event Logs + Materialized Views + Dictionaries |
-| **BI** | Apache Superset | Dashboard analitik dari Gold layer (OBT) |
+| **BI** | Apache Superset 6.0.0 | Dashboard analitik dari Gold layer (OBT) |
 | **Monitoring** | Prometheus + Grafana | Monitoring WAL Lag, resource, dll |
 
 ## 🛠️ Tech Stack
@@ -108,10 +108,24 @@ Pipeline ini sudah divalidasi dengan cara:
 ├── services/
 │   ├── cdc-ingestor/          # CDC Ingestor (Go + pglogrepl + Protobuf)
 │   └── order-service/         # FastAPI + Data Generator (Faker)
-├── scripts/sql/               # DDL PostgreSQL & ClickHouse
+├── scripts/
+│   └── sql/                   # DDL PostgreSQL & ClickHouse
 ├── deployments/docker/        # Docker Compose + konfigurasi
-├── k8s/                       # Kubernetes manifests (WIP)
-├── docs/screenshots/          # Screenshot untuk README
+│   ├── docker-compose.yml
+│   ├── Dockerfile.superset    # Superset 6.0.0 + ClickHouse driver
+│   ├── clickhouse-users.xml
+│   ├── init-superset.sh
+│   └── dashboards/
+├── services/
+│   ├── cdc-ingestor/          # CDC Ingestor (Go + pglogrepl + Protobuf)
+│   ├── order-service/         # FastAPI + Data Generator (Faker)
+│   ├── grafana/               # Grafana provisioning & dashboards
+│   └── prometheus.yml         # Prometheus config
+├── docs/
+│   ├── screenshots/           # Screenshot untuk README
+│   ├── system_architecture.md
+│   ├── data_architecture.md
+│   └── ...
 ├── Makefile                   # Command utama
 └── .env                       # Konfigurasi environment
 ```
