@@ -29,6 +29,75 @@ services:
       timeout: 5s
       retries: 5
 
+  # Order Service (FastAPI)
+  order-service:
+    build:
+      context: ../../services/order-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+    volumes:
+      - ../../services/order-service:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+  traffic-generator:
+    build:
+      context: ../../services/order-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+      PYTHONUNBUFFERED: 1
+    command: ["python", "data_generator.py", "--traffic"]
+    depends_on:
+      order-service:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+  debezium:
+    image: quay.io/debezium/connect:3.6.0.Final
+    container_name: connect
+    hostname: connect
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres-source:
+        condition: service_healthy
+
+    environment:
+      BOOTSTRAP_SERVERS: redpanda:9092 # Diarahkan ke container Redpanda Anda
+      GROUP_ID: debezium-connect-cluster
+
+      CONFIG_STORAGE_TOPIC: my_connect_configs
+      OFFSET_STORAGE_TOPIC: my_connect_offsets
+      STATUS_STORAGE_TOPIC: my_connect_statuses
+
+      # Faktor replikasi diset 1 karena Redpanda Anda berjalan single-node di lokal
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+            
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    ports:
+      - "8083:8083"
+
+
   # Message Broker (Redpanda)
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v26.1.13
@@ -104,61 +173,6 @@ services:
 
     depends_on:
       - redpanda
-
-  # Order Service (FastAPI)
-  order-service:
-    build:
-      context: ../../services/order-service
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
-    volumes:
-      - ../../services/order-service:/app
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres-source:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - default
-
-  # Pelahap WAL CDC (Golang Ingestor)
-  cdc-ingestor:
-    build:
-      context: ../../services/cdc-ingestor
-      dockerfile: Dockerfile
-    env_file:
-      - ../../.env
-    environment:
-      - REDPANDA_BROKERS=redpanda:9092
-    depends_on:
-      postgres-source:
-        condition: service_healthy
-      redpanda:
-        condition: service_started
-    restart: on-failure
-    networks:
-      - default
-    # Robot Transaksi (Traffic Generator)
-  traffic-generator:
-    build:
-      context: ../../services/order-service
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
-      PYTHONUNBUFFERED: 1
-    command: ["python", "data_generator.py", "--traffic"]
-    depends_on:
-      order-service:
-        condition: service_healthy
-    networks:
-      - default
-    restart: unless-stopped
 
   # Data Warehouse (ClickHouse)
   clickhouse:

@@ -8,8 +8,13 @@ endif
 DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-compose.yml
 POSTGRES_USER ?= admin
 POSTGRES_DB ?= ecom_db
+CONNECTOR_NAME ?= ecommerce-postgres-source
+TOPIC_PREFIX ?= ecommerce
+SLOT_NAME ?= ecommerce_debezium_slot
+PUBLICATION_NAME ?= ecommerce_debezium_publication
+TABLE_INCLUDE_LIST ?= public.users,public.products,public.orders,public.order_items
 
-.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg init-redpanda init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg init-redpanda init-debezium init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
 
 help:
 	@echo "Enterprise CDC Pipeline - Available Commands"
@@ -71,6 +76,16 @@ init-redpanda:
 	@sleep 5
 	$(DOCKER_COMPOSE) exec -T redpanda rpk topic create cdc-events -p 3 || true
 	@echo "✓ Topic cdc-events with 3 partitions initialized"
+
+init-debezium:
+	@echo "Generating connector config from template..."
+	@envsubst < connectors/postgres-template.json > connectors/postgres-source.json
+	@echo "Registering Debezium connector..."
+	@curl -s -X POST http://localhost:8083/connectors \
+		-H "Content-Type: application/json" \
+		--data @connectors/postgres-source.json \
+		-o /dev/null -w "HTTP %{http_code}\n"
+	@echo "✓ Debezium connector registered"
 
 init-db:
 	@echo "Initializing database schema..."
