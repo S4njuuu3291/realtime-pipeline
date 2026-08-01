@@ -16,9 +16,10 @@ echo "Initializing Superset..."
 superset init
 
 echo "Registering ClickHouse database..."
+: "${CLICKHOUSE_SUPERSET_PASSWORD:?CLICKHOUSE_SUPERSET_PASSWORD belum diset}"
 superset set-database-uri \
     --database-name "ClickHouse_Connect_Superset" \
-    --uri "clickhouse+connect://default:admin123@clickhouse:8123/default" \
+    --uri "clickhouse+connect://superset_user:${CLICKHOUSE_SUPERSET_PASSWORD}@clickhouse:8123/default" \
     --skip_create
 
 # Auto-import dashboard jika ada file export di folder dashboards

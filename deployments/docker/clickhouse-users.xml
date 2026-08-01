@@ -2,7 +2,7 @@
     <users>
         <!-- User admin: buat operasi DDL (create table, dll) -->
         <default>
-            <password>admin123</password>
+            <password from_env="CLICKHOUSE_ADMIN_PASSWORD" />
             <access_management>1</access_management>
             <networks>
                 <ip>::/0</ip>
@@ -11,7 +11,7 @@
 
         <!-- User khusus Superset: READ ONLY -->
         <superset_user>
-            <password>superset_pass</password>
+            <password from_env="CLICKHOUSE_SUPERSET_PASSWORD" />
             <networks>
                 <ip>::/0</ip>
             </networks>

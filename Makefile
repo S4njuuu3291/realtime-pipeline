@@ -51,6 +51,10 @@ docker-down:
 	@echo "Stopping services..."
 	$(DOCKER_COMPOSE) down
 
+docker-down-v:
+	@echo "Stopping services and removing volumes..."
+	$(DOCKER_COMPOSE) down -v
+
 # Perintah khusus untuk reset jika order-service error terus (Clear Cache)
 docker-rebuild:
 	@echo "Rebuilding order-service without cache..."
@@ -99,16 +103,16 @@ db-shell:
 
 clickhouse-shell:
 	@echo "Accessing ClickHouse shell..."
-	docker exec -it docker-clickhouse-1 clickhouse-client --password admin123
+	docker exec -it docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD)
 
 init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
-	cat scripts/sql/init_clickhouse.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 --multiquery
+	cat scripts/sql/init_clickhouse.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery
 	@echo "✓ ClickHouse schema initialized successfully"
 
 init-analytics:
 	@echo "Initializing Analytics (Silver & Gold Layers)..."
-	cat scripts/sql/init_analytics.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 --multiquery
+	cat scripts/sql/init_analytics.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery
 	@echo "✓ Analytics schema initialized successfully"
 
 init-superset:
@@ -118,7 +122,7 @@ init-superset:
 
 clean-clickhouse:
 	@echo "Dropping all ClickHouse tables and views..."
-	docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 -q " \
+	docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) -q " \
 		DROP VIEW IF EXISTS analytics_sales_obt; \
 		DROP VIEW IF EXISTS analytics_sales_mv; \
 		DROP VIEW IF EXISTS orders_join_mv; \
@@ -169,11 +173,7 @@ export-dashboard:
 	@echo "📤 Exporting dashboard from Dev to provisioning..."
 	python3 -m scripts.export-dashboard
 	@echo "✓ Dashboard export complete. Now reloading"
-	curl -X POST http://admin:admin@localhost:3000/api/admin/provisioning/dashboards/reload
-	@echo "✓ Dashboard reloaded!"
-
-logs:
-	$(DOCKER_COMPOSE) logs -f
+	curl -sf -X POST -u "$(GRAFANA_ADMIN_USER):$(GRAFANA_ADMIN_PASSWORD)" http://localhost:3000/api/admin/provisioning/dashboards/reload
 
 logs-cdc:
 	$(DOCKER_COMPOSE) logs -f cdc-ingestor
@@ -181,6 +181,10 @@ logs-cdc:
 logs-tg:
 	# tail 20 lines of logs and follow
 	$(DOCKER_COMPOSE) logs --tail=20 --follow traffic-generator
+
+restart-tg:
+	@echo "Restarting traffic-generator..."
+	$(DOCKER_COMPOSE) restart traffic-generator
 
 docker-logs-os:
 	$(DOCKER_COMPOSE) logs order-service
