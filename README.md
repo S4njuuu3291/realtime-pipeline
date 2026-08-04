@@ -13,9 +13,9 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 | Layer | Teknologi | Fungsi |
 |-------|-----------|--------|
 | **Source** | PostgreSQL (WAL) | Simulasi database transaksional E-Commerce (users, products, orders, order_items) |
-| **Ingestion** | CDC Ingestor (Go) | Baca WAL → serialize Protobuf → kirim ke Redpanda |
-| **Message Broker** | Redpanda (Kafka) | Buffer pesan dengan 3 partisi |
-| **Warehouse** | ClickHouse | OLAP dengan CDC Event Logs + Materialized Views + Dictionaries |
+| **Ingestion** | Debezium (Kafka Connect) | Kelola replication slot & logical decoding, kirim event standar Debezium ke Redpanda |
+| **Message Broker** | Redpanda (Kafka) | Buffer pesan + Schema Registry (payload Debezium JSON) |
+| **Warehouse** | ClickHouse | OLAP dengan CDC Event Logs + Materialized Views + Query-time Views (Silver/Gold) |
 | **BI** | Apache Superset 6.0.0 | Dashboard analitik dari Gold layer (OBT) |
 | **Monitoring** | Prometheus + Grafana | Monitoring WAL Lag, resource, dll |
 
@@ -23,15 +23,14 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 
 | Teknologi | Kegunaan |
 |-----------|----------|
-| **Go** | CDC Ingestor — baca WAL PostgreSQL & kirim ke Redpanda |
-| **Protobuf** | Serialisasi event CDC (schema evolution, binary format) |
+| **Debezium (Kafka Connect)** | CDC engine — kelola replication slot, logical decoding, schema evolution |
 | **PostgreSQL** | Source database transaksional E-Commerce (WAL logical replication) |
-| **Redpanda** | Kafka-compatible message broker (3 partisi, row-level ordering) |
-| **ClickHouse** | Data warehouse OLAP (Kafka Engine, Materialized Views, Dictionaries) |
+| **Redpanda** | Kafka-compatible message broker + Schema Registry (payload JSON) |
+| **ClickHouse** | Data warehouse OLAP (Kafka Engine, Materialized Views, Query-time Views) |
 | **Apache Superset** | BI dashboard dari Gold layer (One Big Table) |
 | **Prometheus + Grafana** | Monitoring pipeline (WAL Lag, resource metrics) |
 | **FastAPI (Python)** | Order service & traffic generator (Faker) |
-| **Docker Compose** | Orchestrasi 11+ container |
+| **Docker Compose** | Orchestrasi 13+ container |
 
 ## 📖 Dokumentasi
 
@@ -42,22 +41,24 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 | [Data Dictionary](docs/data_dictionary_gold.md) | Skema & metrik tabel Gold (OBT) |
 | [ERD Source](docs/erd_source.md) | Entity Relationship Diagram PostgreSQL |
 | [ERD Warehouse](docs/erd_warehouse.md) | Entity Relationship Diagram ClickHouse (Bronze/Silver/Gold) |
+| [ADR-001: Migrasi ke Debezium](docs/adr/ADR-001-migration-to-dbz.md) | Keputusan arsitektur migrasi CDC |
+| [Legacy vs Debezium](docs/cdc_legacy_vs_debezium.md) | Perbandingan implementasi pglogrepl lama vs Debezium |
 
 ---
 
 ## 🛠️ Cara Jalankan
 
-**Prerequisites:** Docker & Docker Compose
+**Prerequisites:** Docker & Docker Compose, buat file `.env` (lihat `.env.example`)
 
 ```bash
 # 1. Start semua service
 make docker-up
 
 # 2. Inisialisasi komponen (urutan penting)
-make init-redpanda          # Buat topic cdc-events (3 partisi)
+make init-redpanda          # Buat topic cdc-events
 make init-db                # Buat tabel E-Commerce di PostgreSQL (users, products, orders, order_items)
-make init-clickhouse        # Bronze Layer (CDC event log tables)
-make init-analytics         # Silver & Gold Layer (views + dictionaries + OBT)
+make init-dbz               # Generate & register connector Debezium (dari template + env)
+make init-clickhouse        # Bronze Layer (CDC queue) + Silver/Gold Layer (views + OBT)
 make init-superset          # Init admin & import dashboard
 
 # 3. Seed data & testing
@@ -65,7 +66,7 @@ make seed-db                # Seed data dummy E-Commerce (users & products)
 make generate-traffic       # Bot transaksi E-Commerce otomatis (real-time testing)
 
 # 4. Monitoring
-make logs-cdc               # Lihat log CDC ingestor
+make logs-tg                # Lihat log traffic generator
 ```
 
 ## 📊 Akses Service
@@ -73,62 +74,59 @@ make logs-cdc               # Lihat log CDC ingestor
 | Service | URL | Keterangan |
 |---------|-----|------------|
 | **Order API** | http://localhost:8000/docs | FastAPI Swagger |
-| **Redpanda Console** | http://localhost:8888 | Lihat stream pesan Protobuf |
-| **Superset** | http://localhost:8088 | Dashboard BI (admin/admin) |
-| **Grafana** | http://localhost:3000 | Monitoring pipeline — WAL Lag, CPU, memory, disk (admin/admin) |
+| **Debezium Connect** | http://localhost:8083 | REST API Kafka Connect (status connector) |
+| **Redpanda Console** | http://localhost:8888 | Lihat stream pesan Debezium (JSON + Schema Registry) |
+| **Redpanda Schema Registry** | http://localhost:8081 | Registry skema payload Debezium |
+| **Superset** | http://localhost:8088 | Dashboard BI (admin / lihat .env) |
+| **Grafana** | http://localhost:3000 | Monitoring pipeline — WAL Lag, CPU, memory, disk (lihat .env) |
 | **Prometheus** | http://localhost:9090 | Metrics pipeline |
 
 ### 📈 Grafana — Monitoring Dashboard
 
 Monitoring pipeline secara real-time mencakup:
-- **WAL Lag** — delay antara PostgreSQL dan CDC Ingestor
+- **WAL Lag** — delay antara PostgreSQL dan CDC
 - **Resource Usage** — CPU, memory, disk dari Node Exporter
 - **Postgres Metrics** — koneksi, replikasi, long running transactions
 
 ![Grafana — OS, WAL, Redpanda Metrics Monitoring](docs/screenshots/grafana-monitoring.png)
-<!-- TODO: screenshot dashboard Grafana yang menampilkan WAL Lag dan metrics -->
 
 ### 📊 Superset — BI Dashboard
 
 Dashboard analitik E-Commerce dari Gold layer (One Big Table), siap untuk eksplorasi data real-time.
 
 ![Superset Dashboard — Sales Analytics](docs/screenshots/superset-dashboard.png)
-<!-- TODO: screenshot dashboard Superset dengan grafik penjualan -->
 
 ## 🧪 Validasi Real-time
 
 Pipeline ini sudah divalidasi dengan cara:
-1. **Matikan CDC Ingestor** → WAL Lag naik (numpuk) → traffic tetap jalan
-2. **Hidupkan lagi** → WAL Lag turun ke ~0KB (catch up)
+1. **Hentikan connector Debezium** → event berhenti masuk, lag terlihat di Redpanda/Grafana
+2. **Aktifkan lagi** → data catch up dan sinkron kembali
 3. Data di ClickHouse selalu sinkron dengan PostgreSQL dalam hitungan detik
 
 ## 📂 Struktur Proyek
 
 ```
 ├── services/
-│   ├── cdc-ingestor/          # CDC Ingestor (Go + pglogrepl + Protobuf)
-│   └── order-service/         # FastAPI + Data Generator (Faker)
+│   ├── order-service/         # FastAPI + Data Generator (Faker)
+│   ├── grafana/               # Grafana provisioning & dashboards
+│   ├── prometheus/            # Prometheus config
+│   └── postgres-source/       # Init SQL source
+├── connectors/                # Konfigurasi connector Debezium (template + hasil generate)
 ├── scripts/
-│   └── sql/                   # DDL PostgreSQL & ClickHouse
+│   └── sql/                   # DDL PostgreSQL & ClickHouse (init_source, init_clickhouse)
 ├── deployments/docker/        # Docker Compose + konfigurasi
 │   ├── docker-compose.yml
 │   ├── Dockerfile.superset    # Superset 6.0.0 + ClickHouse driver
 │   ├── clickhouse-users.xml
 │   ├── init-superset.sh
 │   └── dashboards/
-├── services/
-│   ├── cdc-ingestor/          # CDC Ingestor (Go + pglogrepl + Protobuf)
-│   ├── order-service/         # FastAPI + Data Generator (Faker)
-│   ├── grafana/               # Grafana provisioning & dashboards
-│   └── prometheus.yml         # Prometheus config
 ├── docs/
-│   ├── screenshots/           # Screenshot untuk README
-│   ├── system_architecture.md
-│   ├── data_architecture.md
+│   ├── adr/                   # ADR-001: Migrasi ke Debezium
+│   ├── cdc_legacy_vs_debezium.md
+│   ├── screenshots/
 │   └── ...
 ├── Makefile                   # Command utama
-└── .env                       # Konfigurasi environment
+└── .env                       # Konfigurasi environment (jangan di-commit)
 ```
-
 
 *Dibuat untuk keperluan belajar Data Engineering — Real-time Pipeline Journey.*
