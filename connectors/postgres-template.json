@@ -15,6 +15,7 @@
     "schema.include.list": "public",
     "table.include.list": "${TABLE_INCLUDE_LIST}",
     "snapshot.mode": "initial",
+    "decimal.handling.mode": "string",
     "include.schema.changes": "false",
     "heartbeat.interval.ms": "10000"
   }

@@ -97,7 +97,6 @@ services:
     ports:
       - "8083:8083"
 
-
   # Message Broker (Redpanda)
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v26.1.13
