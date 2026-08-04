@@ -67,14 +67,4 @@ CREATE TRIGGER set_timestamp_orders
 BEFORE UPDATE ON orders
 FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
 
--- Seed Data (Data Awal) 
--- Kita masukkan beberapa produk awal agar API kita punya barang untuk "dijual"
-INSERT INTO products (name, category, brand, price, stock_quantity) VALUES
-('MacBook Pro M2', 'Electronics', 'Apple', 1999.99, 50),
-('ThinkPad X1 Carbon', 'Electronics', 'Lenovo', 1499.00, 100),
-('AirPods Pro', 'Accessories', 'Apple', 249.99, 200),
-('Mechanical Keyboard K6', 'Accessories', 'Keychron', 99.50, 150),
-('G Pro X Superlight', 'Accessories', 'Logitech', 129.99, 120),
-('ErgoChair Pro', 'Furniture', 'Autonomous', 499.00, 20);
-
 CREATE PUBLICATION my_pub FOR ALL TABLES;

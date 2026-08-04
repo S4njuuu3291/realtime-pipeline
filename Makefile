@@ -8,8 +8,13 @@ endif
 DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-compose.yml
 POSTGRES_USER ?= admin
 POSTGRES_DB ?= ecom_db
+CONNECTOR_NAME ?= ecommerce-postgres-source
+TOPIC_PREFIX ?= ecommerce
+SLOT_NAME ?= ecommerce_debezium_slot
+PUBLICATION_NAME ?= ecommerce_debezium_publication
+TABLE_INCLUDE_LIST ?= public.users,public.products,public.orders,public.order_items
 
-.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg init-redpanda init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg init-redpanda init-debezium init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
 
 help:
 	@echo "Enterprise CDC Pipeline - Available Commands"
@@ -51,6 +56,10 @@ docker-down:
 	@echo "Stopping services..."
 	$(DOCKER_COMPOSE) down
 
+docker-down-v:
+	@echo "Stopping services and removing volumes..."
+	$(DOCKER_COMPOSE) down -v
+
 # Perintah khusus untuk reset jika order-service error terus (Clear Cache)
 docker-rebuild:
 	@echo "Rebuilding order-service without cache..."
@@ -67,6 +76,16 @@ init-redpanda:
 	@sleep 5
 	$(DOCKER_COMPOSE) exec -T redpanda rpk topic create cdc-events -p 3 || true
 	@echo "✓ Topic cdc-events with 3 partitions initialized"
+
+init-dbz:
+	@echo "Generating connector config from template..."
+	@envsubst < connectors/postgres-template.json > connectors/postgres-source.json
+	@echo "Registering Debezium connector..."
+	@curl -s -X POST http://localhost:8083/connectors \
+		-H "Content-Type: application/json" \
+		--data @connectors/postgres-source.json \
+		-o /dev/null -w "HTTP %{http_code}\n"
+	@echo "✓ Debezium connector registered"
 
 init-db:
 	@echo "Initializing database schema..."
@@ -88,61 +107,24 @@ clean-db:
 	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP TABLE IF EXISTS order_items, orders, products, users CASCADE;"
 	@echo "✓ Database tables dropped successfully"
 
-drop-slot:
-	@echo "Dropping PostgreSQL replication slot..."
-	-$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT pg_drop_replication_slot('cdc_slot');"
-	@echo "✓ Replication slot cleaned"
-
 db-shell:
 	@echo "Accessing PostgreSQL shell..."
 	$(DOCKER_COMPOSE) exec postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
 clickhouse-shell:
 	@echo "Accessing ClickHouse shell..."
-	docker exec -it docker-clickhouse-1 clickhouse-client --password admin123
+	docker exec -it docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD)
 
 init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
-	cat scripts/sql/init_clickhouse.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 --multiquery
+	cat scripts/sql/init_clickhouse.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery
+	cat scripts/sql/init_analytics.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery
 	@echo "✓ ClickHouse schema initialized successfully"
-
-init-analytics:
-	@echo "Initializing Analytics (Silver & Gold Layers)..."
-	cat scripts/sql/init_analytics.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 --multiquery
-	@echo "✓ Analytics schema initialized successfully"
 
 init-superset:
 	@echo "Initializing Apache Superset..."
 	docker exec -i docker-superset-1 bash < deployments/docker/init-superset.sh
 	@echo "✓ Superset is initialized and ready to use"
-
-clean-clickhouse:
-	@echo "Dropping all ClickHouse tables and views..."
-	docker exec -i docker-clickhouse-1 clickhouse-client --password admin123 -q " \
-		DROP VIEW IF EXISTS analytics_sales_obt; \
-		DROP VIEW IF EXISTS analytics_sales_mv; \
-		DROP VIEW IF EXISTS orders_join_mv; \
-		DROP TABLE IF EXISTS orders_join; \
-		DROP DICTIONARY IF EXISTS dict_users; \
-		DROP DICTIONARY IF EXISTS dict_products; \
-		DROP DICTIONARY IF EXISTS dict_orders; \
-		DROP VIEW IF EXISTS vw_current_users; \
-		DROP VIEW IF EXISTS vw_current_products; \
-		DROP VIEW IF EXISTS vw_current_orders; \
-		DROP VIEW IF EXISTS vw_current_order_items; \
-		DROP VIEW IF EXISTS users_mv; \
-		DROP VIEW IF EXISTS products_mv; \
-		DROP VIEW IF EXISTS orders_mv; \
-		DROP VIEW IF EXISTS order_items_mv; \
-		DROP TABLE IF EXISTS cdc_queue; \
-		DROP TABLE IF EXISTS users_history; \
-		DROP TABLE IF EXISTS products_history; \
-		DROP TABLE IF EXISTS orders_history; \
-		DROP TABLE IF EXISTS order_items_history; \
-		DROP TABLE IF EXISTS analytics_sales_obt;"
-	@echo "✓ ClickHouse environment cleaned"
-
-reset-clickhouse: clean-clickhouse init-clickhouse init-analytics
 
 reset-all: drop-slot clean-db clean-clickhouse init-db init-clickhouse init-analytics init-redpanda
 	@echo "🚀 FULL SYSTEM RESET COMPLETE"
@@ -169,11 +151,7 @@ export-dashboard:
 	@echo "📤 Exporting dashboard from Dev to provisioning..."
 	python3 -m scripts.export-dashboard
 	@echo "✓ Dashboard export complete. Now reloading"
-	curl -X POST http://admin:admin@localhost:3000/api/admin/provisioning/dashboards/reload
-	@echo "✓ Dashboard reloaded!"
-
-logs:
-	$(DOCKER_COMPOSE) logs -f
+	curl -sf -X POST -u "$(GRAFANA_ADMIN_USER):$(GRAFANA_ADMIN_PASSWORD)" http://localhost:3000/api/admin/provisioning/dashboards/reload
 
 logs-cdc:
 	$(DOCKER_COMPOSE) logs -f cdc-ingestor
@@ -182,16 +160,16 @@ logs-tg:
 	# tail 20 lines of logs and follow
 	$(DOCKER_COMPOSE) logs --tail=20 --follow traffic-generator
 
+restart-tg:
+	@echo "Restarting traffic-generator..."
+	$(DOCKER_COMPOSE) restart traffic-generator
+
+pause-tg:
+	@echo "Pausing traffic-generator..."
+	$(DOCKER_COMPOSE) stop traffic-generator
+
 docker-logs-os:
 	$(DOCKER_COMPOSE) logs order-service
-
-turn-on-cdc:
-	$(DOCKER_COMPOSE) up -d cdc-ingestor
-
-turn-off-cdc:
-	$(DOCKER_COMPOSE) rm -s -f cdc-ingestor
-
-on-logs-cdc: turn-on-cdc logs-cdc
 
 clean:
 	@echo "Cleaning build artifacts..."

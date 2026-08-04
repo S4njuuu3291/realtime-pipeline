@@ -16,6 +16,7 @@ services:
       - max_wal_senders=5
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../../scripts/sql/init_source.sql:/docker-entrypoint-initdb.d/init_source.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -27,35 +28,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  # Message Broker (Redpanda)
-  redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.3.1
-    command:
-      - redpanda start
-      - --smp 1
-      - --memory 1G
-      - --overprovisioned
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr
-        internal://redpanda:9092,external://localhost:19092
-
-    volumes:
-      - redpanda_data:/var/lib/redpanda/data
-    ports:
-      - "19092:19092"
-    networks:
-      - default
-      - observability
-
-  redpanda-console:
-    image: docker.redpanda.com/redpandadata/console:v2.4.3
-    environment:
-      KAFKA_BROKERS: "redpanda:9092"
-    ports:
-      - "8888:8080"
-    depends_on:
-      - redpanda
 
   # Order Service (FastAPI)
   order-service:
@@ -79,24 +51,6 @@ services:
     networks:
       - default
 
-  # Pelahap WAL CDC (Golang Ingestor)
-  cdc-ingestor:
-    build:
-      context: ../../services/cdc-ingestor
-      dockerfile: Dockerfile
-    env_file:
-      - ../../.env
-    environment:
-      - REDPANDA_BROKERS=redpanda:9092
-    depends_on:
-      postgres-source:
-        condition: service_healthy
-      redpanda:
-        condition: service_started
-    restart: on-failure
-    networks:
-      - default
-    # Robot Transaksi (Traffic Generator)
   traffic-generator:
     build:
       context: ../../services/order-service
@@ -112,9 +66,116 @@ services:
       - default
     restart: unless-stopped
 
+  debezium:
+    image: quay.io/debezium/connect:3.6.0.Final
+    container_name: connect
+    hostname: connect
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres-source:
+        condition: service_healthy
+
+    environment:
+      BOOTSTRAP_SERVERS: redpanda:9092 # Diarahkan ke container Redpanda Anda
+      GROUP_ID: debezium-connect-cluster
+
+      CONFIG_STORAGE_TOPIC: my_connect_configs
+      OFFSET_STORAGE_TOPIC: my_connect_offsets
+      STATUS_STORAGE_TOPIC: my_connect_statuses
+
+      # Faktor replikasi diset 1 karena Redpanda Anda berjalan single-node di lokal
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+            
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    ports:
+      - "8083:8083"
+
+  # Message Broker (Redpanda)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.13
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 1G
+      - --overprovisioned
+      
+      # Listener internal untuk container lain.
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+
+      # Alamat yang diumumkan ke client.
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:8082,external://localhost:18082
+
+      # Schema Registry (untuk Debezium JSON) -> ekspos ke host di 8081
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+
+
+      - --rpc-addr
+      - redpanda:33145
+
+      - --advertise-rpc-addr
+      - redpanda:33145
+
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    ports:
+      - "19092:19092"
+      - "18082:18082"
+      - "18081:8081"
+      - "19644:9644"
+    
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    networks:
+      - default
+      - observability
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v3.9.0
+    container_name: redpanda-console
+    ports:
+      - "8888:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      # Koneksi ke Schema Registry (Wajib agar Console bisa baca JSON Debezium)
+      SCHEMAREGISTRY_ENABLED: "true"
+      SCHEMAREGISTRY_URLS: http://redpanda:18081
+
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers:
+            - redpanda:9092
+
+        schemaRegistry:
+          enabled: true
+          urls:
+            - http://redpanda:18081
+
+    depends_on:
+      - redpanda
+
   # Data Warehouse (ClickHouse)
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:26.3.9.8
     ports:
       - "8123:8123" # HTTP Interface (bisa dipakai untuk integrasi aplikasi)
       - "9000:9000" # Native Client (untuk DBeaver / ClickHouse CLI)
@@ -122,6 +183,9 @@ services:
       nofile:
         soft: 262144
         hard: 262144
+    environment:
+      - CLICKHOUSE_ADMIN_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD}
+      - CLICKHOUSE_SUPERSET_PASSWORD=${CLICKHOUSE_SUPERSET_PASSWORD}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
@@ -139,7 +203,7 @@ services:
     ports:
       - "8088:8088"
     environment:
-      SUPERSET_SECRET_KEY: "my_very_secret_key_for_this_project"
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set di .env}
       SUPERSET_LOAD_EXAMPLES: "no"
     depends_on:
       - clickhouse
@@ -150,7 +214,7 @@ services:
       - ./dashboards:/app/dashboards
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.11.2
     restart: unless-stopped
     ports:
       - "9090:9090"
@@ -163,13 +227,13 @@ services:
       - observability
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.0.1
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set di .env}
       - GF_INSTALL_PLUGINS=
     volumes:
       - grafana-data:/var/lib/grafana
@@ -181,7 +245,7 @@ services:
       - observability
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.11.1
     restart: unless-stopped
     ports:
       - "9100:9100"
@@ -194,7 +258,7 @@ services:
       - observability
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
+    image: prometheuscommunity/postgres-exporter:v0.19.1
     environment:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}?sslmode=disable"
     command:
