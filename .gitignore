@@ -18,6 +18,9 @@ coverage.out
 *.o
 *.a
 .DS_Store
+# Binary hasil build Go (tanpa ekstensi) di folder services/*/consumer
+/services/consumer/main
+
 
 # IDEs
 .idea/

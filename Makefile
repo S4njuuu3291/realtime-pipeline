@@ -168,6 +168,10 @@ pause-tg:
 	@echo "Pausing traffic-generator..."
 	$(DOCKER_COMPOSE) stop traffic-generator
 
+resume-tg:
+	@echo "Starting traffic-generator..."
+	$(DOCKER_COMPOSE) start traffic-generator
+
 docker-logs-os:
 	$(DOCKER_COMPOSE) logs order-service
 
