@@ -23,9 +23,9 @@ type OrderDetail struct {
 }
 
 type Order struct {
-	Before OrderDetail `json:"before"`
-	After  OrderDetail `json:"after"`
-	Op     string      `json:"op"`
+	Before *OrderDetail `json:"before"`
+	After  *OrderDetail `json:"after"`
+	Op     string       `json:"op"`
 }
 
 func main() {
@@ -95,7 +95,20 @@ func main() {
 			log.Printf("Error fetching records: %v", err)
 		}
 
+		if fetches.NumRecords() == 0 {
+			continue
+		}
+
+		batch, err := conn.PrepareBatch(ctx, "INSERT INTO orders_history (id, user_id, total_amount, status, created_at, updated_at)")
+
+		if err != nil {
+			log.Printf("Error preparing batch: %v", err)
+			continue
+		}
+
 		iter := fetches.RecordIter()
+
+		recordsInBatch := 0
 
 		for !iter.Done() {
 			record := iter.Next()
@@ -118,15 +131,25 @@ func main() {
 			}
 
 			var orderDetail OrderDetail
-			if order.Op == "c" {
-				orderDetail = order.After
-			} else if order.Op == "r" {
-				orderDetail = order.After
-			} else if order.Op == "u" {
-				orderDetail = order.After
-			} else if order.Op == "d" {
-				orderDetail = order.Before
-			} else {
+			// if order.Op == "c" {
+			// 	orderDetail = order.After
+			// } else if order.Op == "r" {
+			// 	orderDetail = order.After
+			// } else if order.Op == "u" {
+			// 	orderDetail = order.After
+			// } else if order.Op == "d" {
+			// 	orderDetail = order.Before
+			// } else {
+			// 	log.Printf("Unknown operation type: %s", order.Op)
+			// 	continue
+			// }
+
+			switch order.Op {
+			case "c", "r", "u":
+				orderDetail = *order.After
+			case "d":
+				orderDetail = *order.Before
+			default:
 				log.Printf("Unknown operation type: %s", order.Op)
 				continue
 			}
@@ -136,10 +159,43 @@ func main() {
 			// 	os.Exit(1)
 			// }
 
-			fmt.Printf("Consumed record: topic=%s partition=%d offset=%d key=%s value=%+v\n",
-				record.Topic, record.Partition, record.Offset, string(record.Key), orderDetail)
+			// fmt.Printf("Consumed record: topic=%s partition=%d offset=%d key=%s value=%+v\n",
+			// 	record.Topic, record.Partition, record.Offset, string(record.Key), orderDetail)
 
-			if err := client.CommitRecords(ctx, record); err != nil {
+			// err = conn.Exec(ctx, "INSERT INTO orders_history (id, user_id, total_amount, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+			// 	orderDetail.ID, orderDetail.UserID, orderDetail.TotalAmount, orderDetail.Status, orderDetail.CreatedAt, orderDetail.UpdatedAt)
+
+			// if err != nil {
+			// 	log.Printf("Error inserting record into ClickHouse: %v", err)
+			// 	continue
+			// } else {
+			// 	log.Printf("Inserted record into ClickHouse: %+v", orderDetail.ID)
+			// }
+
+			err = batch.Append(
+				orderDetail.ID,
+				orderDetail.UserID,
+				orderDetail.TotalAmount,
+				orderDetail.Status,
+				orderDetail.CreatedAt,
+				orderDetail.UpdatedAt,
+			)
+			// log.Printf("Appended record to batch: %+v", orderDetail.ID)
+
+			if err != nil {
+				log.Printf("Error appending to batch: %v", err)
+				continue
+			}
+
+			recordsInBatch++
+
+		}
+
+		if recordsInBatch > 0 {
+			batch.Send()
+			log.Printf("Inserted batch of %v records into ClickHouse", recordsInBatch)
+
+			if err := client.CommitUncommittedOffsets(ctx); err != nil {
 				log.Printf("Error committing record: %v", err)
 			}
 

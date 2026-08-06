@@ -20,6 +20,7 @@ coverage.out
 .DS_Store
 # Binary hasil build Go (tanpa ekstensi) di folder services/*/consumer
 /services/consumer/main
+/services/consumer/realtime-pipeline
 
 
 # IDEs
