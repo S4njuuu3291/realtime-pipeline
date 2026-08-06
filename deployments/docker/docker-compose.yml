@@ -66,6 +66,31 @@ services:
       - default
     restart: unless-stopped
 
+  # Go Stream Consumer (Kafka -> ClickHouse)
+  consumer:
+    build:
+      context: ../../services/consumer
+      dockerfile: Dockerfile
+    container_name: consumer
+    environment:
+      # Broker di dalam jaringan Docker memakai hostname container Redpanda
+      KAFKA_BROKERS: redpanda:9092
+      TOPIC: ${TOPIC:-ecommerce.public.orders}
+      GROUP_ID: ${GROUP_ID:-go-consumer-group}
+      CLIENT_ID: ${CLIENT_ID:-my-go-consumer}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-default}
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse:9000}
+      CLICKHOUSE_ADMIN_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD}
+    depends_on:
+      redpanda:
+        condition: service_started
+      clickhouse:
+        condition: service_started
+    networks:
+      - default
+    restart: unless-stopped
+
   debezium:
     image: quay.io/debezium/connect:3.6.0.Final
     container_name: connect

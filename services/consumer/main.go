@@ -29,16 +29,13 @@ type Order struct {
 }
 
 func main() {
-	err := godotenv.Load("../../.env")
-
-	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
-	}
+	// .env bersifat opsional: saat berjalan di Docker, env di-set dari compose,
+	// file .env tidak ada di image dan tidak boleh mematikan proses.
+	_ = godotenv.Load("../../.env")
+	_ = godotenv.Load(".env")
 
 	topic := os.Getenv("TOPIC")
 	broker := os.Getenv("KAFKA_BROKERS")
-
-	broker = "localhost:19092"
 
 	group_id := os.Getenv("GROUP_ID")
 	client_id := os.Getenv("CLIENT_ID")
@@ -60,7 +57,10 @@ func main() {
 	}
 	defer client.Close()
 
-	clickhouseHOST := "localhost:9000"
+	clickhouseHOST := os.Getenv("CLICKHOUSE_HOST")
+	if clickhouseHOST == "" {
+		clickhouseHOST = "localhost:9000"
+	}
 	clickhouseUSER := os.Getenv("CLICKHOUSE_USER")
 	clickhousePASSWORD := os.Getenv("CLICKHOUSE_ADMIN_PASSWORD")
 	clickhouseDB := os.Getenv("CLICKHOUSE_DB")
