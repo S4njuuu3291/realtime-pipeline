@@ -14,7 +14,7 @@ SLOT_NAME ?= ecommerce_debezium_slot
 PUBLICATION_NAME ?= ecommerce_debezium_publication
 TABLE_INCLUDE_LIST ?= public.users,public.products,public.orders,public.order_items
 
-.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg init-redpanda init-debezium init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
+.PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg logs-consumer init-redpanda init-debezium init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
 
 help:
 	@echo "Enterprise CDC Pipeline - Available Commands"
@@ -159,6 +159,10 @@ logs-cdc:
 logs-tg:
 	# tail 20 lines of logs and follow
 	$(DOCKER_COMPOSE) logs --tail=20 --follow traffic-generator
+
+logs-consumer:
+	# tail 20 lines of logs and follow
+	$(DOCKER_COMPOSE) logs --tail=20 --follow consumer
 
 restart-tg:
 	@echo "Restarting traffic-generator..."
