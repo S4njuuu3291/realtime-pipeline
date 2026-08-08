@@ -3,76 +3,85 @@
 Diagram berikut menunjukkan bagaimana aliran data bergerak dalam arsitektur Medallion Anda, mulai dari ingest data melalui Kafka hingga ke lapisan Gold berupa *One Big Table* (OBT) di ClickHouse.
 
 ```mermaid
-flowchart TD
-    %% Subgraph Styles
-    classDef layerStyle fill:#fdfdfd,stroke:#333,stroke-width:1px;
-    classDef streamStyle fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+flowchart LR
+    %% =========================
+    %% Styles
+    %% =========================
+    classDef source fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px
+    classDef cdc fill:#F97316,stroke:#EA580C,color:#FFFFFF,stroke-width:2px
+    classDef broker fill:#7C3AED,stroke:#6D28D9,color:#FFFFFF,stroke-width:2px
+    classDef processing fill:#0891B2,stroke:#0E7490,color:#FFFFFF,stroke-width:2px
+    classDef storage fill:#EAB308,stroke:#CA8A04,color:#111827,stroke-width:2px
+    classDef visualization fill:#16A34A,stroke:#15803D,color:#FFFFFF,stroke-width:2px
+    classDef observability fill:#DC2626,stroke:#B91C1C,color:#FFFFFF,stroke-width:2px
+    classDef operational fill:#475569,stroke:#334155,color:#FFFFFF,stroke-width:2px
 
-    subgraph INGEST ["1. Ingestion Layer"]
-        cdc[("fa:fa-stream Event Queue<br/>(Message Broker)")]
+    %% =========================
+    %% Main data flow
+    %% =========================
+    subgraph sourceLayer["Source Layer"]
+        api["Order Service<br/>FastAPI"]
+        generator["Traffic Generator<br/>Faker"]
+        postgres[("PostgreSQL 16<br/>Transactional Database")]
+
+        api -->|"Create and update transactions"| postgres
+        generator -->|"Generate synthetic traffic"| api
     end
 
-    subgraph BRONZE ["2. Bronze Layer (Historical Logs)"]
-        direction LR
-        uh[("User Logs")]
-        ph[("Product Logs")]
-        oh[("Order Logs")]
-        oih[("Order Item Logs")]
+    subgraph ingestionLayer["CDC Ingestion"]
+        debezium["Debezium 3.6<br/>Kafka Connect"]
     end
 
-    subgraph SILVER ["3. Silver Layer (Current State & Cache)"]
-        direction TB
-        subgraph VIEWS ["Deduplicated State (Latest)"]
-            direction LR
-            vu["Current Users"]
-            vp["Current Products"]
-            vo["Current Orders"]
-        end
-        
-        subgraph CACHE ["In-Memory Lookup Cache"]
-            direction LR
-            du[("User Cache")]
-            dp[("Product Cache")]
-            do[("Order Cache")]
-        end
+    subgraph streamingLayer["Streaming Layer"]
+        redpanda[("Redpanda<br/>Kafka-compatible Broker")]
+        console["Redpanda Console"]
     end
 
-    subgraph GOLD ["4. Gold Layer (Analytics Ready)"]
-        enrich_proc{{"fa:fa-bolt Enrichment Logic<br/>(Stream Processor)"}}
-        obt[("Sales Analytics Table<br/>(One Big Table)")]
+    subgraph processingLayer["Stream Processing"]
+        consumer["Go Consumer<br/>franz-go"]
     end
 
-    %% --- DATA FLOW ---
+    subgraph analyticsLayer["Analytics Platform"]
+        clickhouse[("ClickHouse<br/>CDC Event History")]
+        medallion["Medallion Models<br/>Bronze → Silver → Gold"]
+        superset["Apache Superset<br/>Analytics Dashboard"]
+    end
 
-    %% Kafka to Bronze
-    cdc ==>|Persistent Storage| uh
-    cdc ==>|Persistent Storage| ph
-    cdc ==>|Persistent Storage| oh
-    cdc ==>|Persistent Storage| oih
+    postgres -->|"WAL / logical replication"| debezium
+    debezium -->|"Debezium JSON events"| redpanda
+    redpanda -->|"Consumer group"| consumer
+    consumer -->|"Validated batched inserts"| clickhouse
+    clickhouse --> medallion
+    medallion -->|"Analytical queries"| superset
 
-    %% Bronze to Silver
-    uh -.->|Deduplicate| vu
-    ph -.->|Deduplicate| vp
-    oh -.->|Deduplicate| vo
+    console -.->|"Inspect topics and messages"| redpanda
 
-    %% Silver Views to Cache
-    vu -.->|Sync to RAM| du
-    vp -.->|Sync to RAM| dp
-    vo -.->|Sync to RAM| do
+    %% =========================
+    %% Observability
+    %% =========================
+    subgraph observabilityLayer["Observability"]
+        nodeExporter["Node Exporter"]
+        postgresExporter["Postgres Exporter"]
+        prometheus["Prometheus"]
+        grafana["Grafana"]
 
-    %% Real-time Enrichment Path
-    cdc -- "Raw Events" --> enrich_proc
-    
-    %% Lookups
-    du -. "Fetch User Info" .-> enrich_proc
-    dp -. "Fetch Product Info" .-> enrich_proc
-    do -. "Fetch Order Info" .-> enrich_proc
+        nodeExporter --> prometheus
+        postgresExporter --> prometheus
+        prometheus --> grafana
+    end
 
-    %% Final Output
-    enrich_proc ==>|Enriched Records| obt
+    postgres -.-> postgresExporter
+    redpanda -.-> prometheus
+    clickhouse -.-> prometheus
 
-    class INGEST,BRONZE,SILVER,GOLD layerStyle;
-    class cdc,enrich_proc streamStyle;
+    class api,generator,postgres source
+    class debezium cdc
+    class redpanda broker
+    class consumer processing
+    class clickhouse,medallion storage
+    class superset visualization
+    class nodeExporter,postgresExporter,prometheus,grafana observability
+    class console operational
 ```
 
 
