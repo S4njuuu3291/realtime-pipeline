@@ -1,14 +1,109 @@
-# 🚀 Real-time CDC Pipeline (Postgres → ClickHouse)
+# Real-time CDC Pipeline (Postgres → ClickHouse)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Debezium-3.6-000000?logo=debezium&logoColor=white" />
+  <img src="https://img.shields.io/badge/Redpanda-26.1-EA1C2D?logo=redpanda&logoColor=white" />
+  <img src="https://img.shields.io/badge/Go-Consumer-00ADD8?logo=go&logoColor=white" />
+  <img src="https://img.shields.io/badge/ClickHouse-26.3-FFCC01?logo=clickhouse&logoColor=black" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Apache_Superset-6.0-20A6C9?logo=apachesuperset&logoColor=white" />
+  <img src="https://img.shields.io/badge/Prometheus-3.11-E6522C?logo=prometheus&logoColor=white" />
+  <img src="https://img.shields.io/badge/Grafana-13.0-F46800?logo=grafana&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
+</p>
 
 Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simulasi database transaksional **E-Commerce** (PostgreSQL) ke ClickHouse. Setiap perubahan data (INSERT/UPDATE/DELETE) pada tabel `users`, `products`, `orders`, dan `order_items` langsung tertangkap, dikirim via Redpanda (Kafka), dan disimpan di ClickHouse sebagai **CDC Event Log** (history tracking) dengan medallion architecture (Bronze → Silver → Gold).
 
 <br>
-    
-![System Architecture](docs/screenshots/ARCHITECTURE_DIAGRAM.png)
 
+```mermaid
+flowchart LR
+    %% =========================
+    %% Styles
+    %% =========================
+    classDef source fill:#2563EB,stroke:#1D4ED8,color:#FFFFFF,stroke-width:2px
+    classDef cdc fill:#F97316,stroke:#EA580C,color:#FFFFFF,stroke-width:2px
+    classDef broker fill:#7C3AED,stroke:#6D28D9,color:#FFFFFF,stroke-width:2px
+    classDef processing fill:#0891B2,stroke:#0E7490,color:#FFFFFF,stroke-width:2px
+    classDef storage fill:#EAB308,stroke:#CA8A04,color:#111827,stroke-width:2px
+    classDef visualization fill:#16A34A,stroke:#15803D,color:#FFFFFF,stroke-width:2px
+    classDef observability fill:#DC2626,stroke:#B91C1C,color:#FFFFFF,stroke-width:2px
+    classDef operational fill:#475569,stroke:#334155,color:#FFFFFF,stroke-width:2px
+
+    %% =========================
+    %% Main data flow
+    %% =========================
+    subgraph sourceLayer["Source Layer"]
+        api["Order Service<br/>FastAPI"]
+        generator["Traffic Generator<br/>Faker"]
+        postgres[("PostgreSQL 16<br/>Transactional Database")]
+
+        api -->|"Create and update transactions"| postgres
+        generator -->|"Generate synthetic traffic"| api
+    end
+
+    subgraph ingestionLayer["CDC Ingestion"]
+        debezium["Debezium 3.6<br/>Kafka Connect"]
+    end
+
+    subgraph streamingLayer["Streaming Layer"]
+        redpanda[("Redpanda<br/>Kafka-compatible Broker")]
+        console["Redpanda Console"]
+    end
+
+    subgraph processingLayer["Stream Processing"]
+        consumer["Go Consumer<br/>franz-go"]
+    end
+
+    subgraph analyticsLayer["Analytics Platform"]
+        clickhouse[("ClickHouse<br/>CDC Event History")]
+        medallion["Medallion Models<br/>Bronze → Silver → Gold"]
+        superset["Apache Superset<br/>Analytics Dashboard"]
+    end
+
+    postgres -->|"WAL / logical replication"| debezium
+    debezium -->|"Debezium JSON events"| redpanda
+    redpanda -->|"Consumer group"| consumer
+    consumer -->|"Validated batched inserts"| clickhouse
+    clickhouse --> medallion
+    medallion -->|"Analytical queries"| superset
+
+    console -.->|"Inspect topics and messages"| redpanda
+
+    %% =========================
+    %% Observability
+    %% =========================
+    subgraph observabilityLayer["Observability"]
+        nodeExporter["Node Exporter"]
+        postgresExporter["Postgres Exporter"]
+        prometheus["Prometheus"]
+        grafana["Grafana"]
+
+        nodeExporter --> prometheus
+        postgresExporter --> prometheus
+        prometheus --> grafana
+    end
+
+    postgres -.-> postgresExporter
+    redpanda -.-> prometheus
+    clickhouse -.-> prometheus
+
+    class api,generator,postgres source
+    class debezium cdc
+    class redpanda broker
+    class consumer processing
+    class clickhouse,medallion storage
+    class superset visualization
+    class nodeExporter,postgresExporter,prometheus,grafana observability
+    class console operational
+```
+<!-- ![System Architecture](docs/screenshots/ARCHITECTURE_DIAGRAM.png) -->
 <br>
 
-## 🏗️ Arsitektur
+## Arsitektur
 
 | Layer | Teknologi | Fungsi |
 |-------|-----------|--------|
@@ -19,7 +114,7 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 | **BI** | Apache Superset 6.0.0 | Dashboard analitik dari Gold layer (OBT) |
 | **Monitoring** | Prometheus + Grafana | Monitoring WAL Lag, resource, dll |
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Teknologi | Kegunaan |
 |-----------|----------|
@@ -32,7 +127,7 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 | **FastAPI (Python)** | Order service & traffic generator (Faker) |
 | **Docker Compose** | Orchestrasi 13+ container |
 
-## 📖 Dokumentasi
+## Dokumentasi
 
 | Dokumen | Isi |
 |---------|-----|
@@ -46,7 +141,7 @@ Proyek ini adalah implementasi **real-time Change Data Capture (CDC)** dari simu
 
 ---
 
-## 🛠️ Cara Jalankan
+## Cara Jalankan
 
 **Prerequisites:** Docker & Docker Compose, buat file `.env` (lihat `.env.example`)
 
@@ -69,7 +164,7 @@ make generate-traffic       # Bot transaksi E-Commerce otomatis (real-time testi
 make logs-tg                # Lihat log traffic generator
 ```
 
-## 📊 Akses Service
+## Akses Service
 
 | Service | URL | Keterangan |
 |---------|-----|------------|
@@ -81,7 +176,7 @@ make logs-tg                # Lihat log traffic generator
 | **Grafana** | http://localhost:3000 | Monitoring pipeline — WAL Lag, CPU, memory, disk (lihat .env) |
 | **Prometheus** | http://localhost:9090 | Metrics pipeline |
 
-### 📈 Grafana — Monitoring Dashboard
+### Grafana — Monitoring Dashboard
 
 Monitoring pipeline secara real-time mencakup:
 - **WAL Lag** — delay antara PostgreSQL dan CDC
@@ -90,20 +185,20 @@ Monitoring pipeline secara real-time mencakup:
 
 ![Grafana — OS, WAL, Redpanda Metrics Monitoring](docs/screenshots/grafana-monitoring.png)
 
-### 📊 Superset — BI Dashboard
+### Superset — BI Dashboard
 
 Dashboard analitik E-Commerce dari Gold layer (One Big Table), siap untuk eksplorasi data real-time.
 
 ![Superset Dashboard — Sales Analytics](docs/screenshots/superset-dashboard.png)
 
-## 🧪 Validasi Real-time
+## Validasi Real-time
 
 Pipeline ini sudah divalidasi dengan cara:
 1. **Hentikan connector Debezium** → event berhenti masuk, lag terlihat di Redpanda/Grafana
 2. **Aktifkan lagi** → data catch up dan sinkron kembali
 3. Data di ClickHouse selalu sinkron dengan PostgreSQL dalam hitungan detik
 
-## 📂 Struktur Proyek
+## Struktur Proyek
 
 ```
 ├── services/
