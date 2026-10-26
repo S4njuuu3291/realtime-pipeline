@@ -21,18 +21,17 @@ def get_db_url():
         host = os.getenv("POSTGRES_HOST", "postgres-source")
         port = os.getenv("POSTGRES_PORT", "5432")
         db = os.getenv("POSTGRES_DB", "ecom_db")
-        return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+        return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
     
     return url
 
 DATABASE_URL = get_db_url()
 
-# Retry logic agar tidak crash saat nunggu Postgres
-# Kita tambahkan pool_size dan max_overflow agar tahan banting saat trafik tinggi
+# Limit per worker; leave PostgreSQL connections for CDC and monitoring.
 engine = create_engine(
     DATABASE_URL, 
-    pool_size=60, 
-    max_overflow=30,
+    pool_size=5,
+    max_overflow=5,
     pool_timeout=30,
     pool_recycle=1800
 )

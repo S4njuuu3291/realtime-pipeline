@@ -78,14 +78,13 @@ init-redpanda:
 	@echo "✓ Topic cdc-events with 3 partitions initialized"
 
 init-dbz:
-	@echo "Generating connector config from template..."
+	@echo "Generating connector config..."
 	@envsubst < connectors/postgres-template.json > connectors/postgres-source.json
 	@echo "Registering Debezium connector..."
-	@curl -s -X POST http://localhost:8083/connectors \
+	@curl --fail-with-body -sS -X POST http://localhost:8083/connectors \
 		-H "Content-Type: application/json" \
-		--data @connectors/postgres-source.json \
-		-o /dev/null -w "HTTP %{http_code}\n"
-	@echo "✓ Debezium connector registered"
+		--data @connectors/postgres-source.json
+	@echo "\nDebezium connector registration request succeeded"
 
 init-db:
 	@echo "Initializing database schema..."

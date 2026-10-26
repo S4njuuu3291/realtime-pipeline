@@ -1451,7 +1451,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "pg_replication_slots_pg_wal_lsn_diff{database=\"ecom_db\",slot_name=\"cdc_slot\"}",
+          "expr": "pg_replication_slots_pg_wal_lsn_diff{database=\"ecom_db\",slot_name=\"ecommerce_debezium_slot\"}",
           "legendFormat": "Lag",
           "range": true,
           "refId": "A"
@@ -1730,7 +1730,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "pg_replication_slot_slot_is_active{slot_name=\"cdc_slot\"}",
+          "expr": "pg_replication_slot_slot_is_active{slot_name=\"ecommerce_debezium_slot\"}",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"

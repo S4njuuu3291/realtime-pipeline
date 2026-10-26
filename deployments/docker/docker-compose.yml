@@ -35,7 +35,7 @@ services:
       context: ../../services/order-service
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
     volumes:
       - ../../services/order-service:/app
     ports:
@@ -56,7 +56,7 @@ services:
       context: ../../services/order-service
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-source:5432/${POSTGRES_DB}
       PYTHONUNBUFFERED: 1
     command: ["python", "data_generator.py", "--traffic"]
     depends_on:
@@ -76,6 +76,9 @@ services:
       # Broker di dalam jaringan Docker memakai hostname container Redpanda
       KAFKA_BROKERS: redpanda:9092
       TOPIC: ${TOPIC:-ecommerce.public.orders}
+      ORDER_ITEMS_TOPIC: ${ORDER_ITEMS_TOPIC:-}
+      USERS_TOPIC: ${USERS_TOPIC:-}
+      PRODUCTS_TOPIC: ${PRODUCTS_TOPIC:-}
       GROUP_ID: ${GROUP_ID:-go-consumer-group}
       CLIENT_ID: ${CLIENT_ID:-my-go-consumer}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
@@ -213,7 +216,6 @@ services:
       - CLICKHOUSE_SUPERSET_PASSWORD=${CLICKHOUSE_SUPERSET_PASSWORD}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
       - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/users.xml
     networks:
       - default
@@ -230,6 +232,7 @@ services:
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set di .env}
       SUPERSET_LOAD_EXAMPLES: "no"
+      CLICKHOUSE_SUPERSET_PASSWORD: ${CLICKHOUSE_SUPERSET_PASSWORD:?set di .env}
     depends_on:
       - clickhouse
     networks:
