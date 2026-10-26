@@ -216,7 +216,6 @@ services:
       - CLICKHOUSE_SUPERSET_PASSWORD=${CLICKHOUSE_SUPERSET_PASSWORD}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ../../services/cdc-ingestor/proto:/var/lib/clickhouse/format_schemas
       - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/users.xml
     networks:
       - default
@@ -233,9 +232,9 @@ services:
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set di .env}
       SUPERSET_LOAD_EXAMPLES: "no"
+      CLICKHOUSE_SUPERSET_PASSWORD: ${CLICKHOUSE_SUPERSET_PASSWORD:?set di .env}
     depends_on:
       - clickhouse
-      CLICKHOUSE_SUPERSET_PASSWORD: ${CLICKHOUSE_SUPERSET_PASSWORD:?set di .env}
     networks:
       - default
     volumes:

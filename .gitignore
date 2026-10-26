@@ -9,6 +9,8 @@ dist/
 *.dylib
 
 # Test cache
+__pycache__/
+*.py[cod]
 .pytest_cache/
 .coverage
 coverage.out
