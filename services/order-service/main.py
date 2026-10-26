@@ -21,7 +21,7 @@ def get_db_url():
         host = os.getenv("POSTGRES_HOST", "postgres-source")
         port = os.getenv("POSTGRES_PORT", "5432")
         db = os.getenv("POSTGRES_DB", "ecom_db")
-        return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+        return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
     
     return url
 
