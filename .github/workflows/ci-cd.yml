@@ -1,5 +1,7 @@
 name: Data Pipeline CI/CD
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -9,6 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/consumer/go.mod
+          cache-dependency-path: services/consumer/go.sum
+
       - name: Validate Docker Compose
         run: |
           echo "POSTGRES_USER=dummy" > .env
@@ -17,6 +24,10 @@ jobs:
           echo "POSTGRES_HOST=dummy" >> .env
           echo "POSTGRES_PORT=5432" >> .env
           echo "REDPANDA_BROKERS=dummy:9092" >> .env
+          echo "SUPERSET_SECRET_KEY=ci-placeholder-secret" >> .env
+          echo "CLICKHOUSE_ADMIN_PASSWORD=ci-placeholder" >> .env
+          echo "CLICKHOUSE_SUPERSET_PASSWORD=ci-placeholder" >> .env
+          echo "GRAFANA_ADMIN_PASSWORD=ci-placeholder" >> .env
           docker compose -f deployments/docker/docker-compose.yml config -q
           echo "Docker Compose valid"
 
@@ -27,15 +38,19 @@ jobs:
 
       - name: Validate Makefile commands
         run: |
-          echo "Makefile commands valid"
+          make -n init-dbz init-superset seed-db > /dev/null
+          bash -n deployments/docker/init-superset.sh
+          jq empty services/grafana/dashboards/data-monitoring.json
 
-      - name: Go vet (CDC Ingestor)
-        working-directory: services/cdc-ingestor
+      - name: Test and vet Go consumer
+        working-directory: services/consumer
         run: |
+          go test ./...
           go vet ./...
           echo "Go code valid"
 
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -77,13 +92,14 @@ jobs:
             fi
 
             echo "🏗️ Building images..."
-            docker compose --env-file .env -f deployments/docker/docker-compose.yml build --no-cache cdc-ingestor order-service traffic-generator
+            docker compose --env-file .env -f deployments/docker/docker-compose.yml build --no-cache consumer order-service traffic-generator
 
             echo "🧹 Unsetting env overrides..."
             unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB POSTGRES_HOST POSTGRES_PORT
 
             if [ "$IS_FIRST_DEPLOY" = true ]; then
-              make full-start
+              docker compose --env-file .env -f deployments/docker/docker-compose.yml up -d --wait
+              make init-db init-dbz init-clickhouse init-superset
               echo "✅ FIRST DEPLOY COMPLETE"
               exit 0
             fi
@@ -94,14 +110,14 @@ jobs:
             sleep 5
 
             echo "🚀 Starting services (recreates containers with new images)..."
-            docker compose --env-file .env -f deployments/docker/docker-compose.yml up -d --wait 2>&1 || true
+            docker compose --env-file .env -f deployments/docker/docker-compose.yml up -d --wait
             sleep 15
 
             echo "📊 Container status:"
             docker ps --format "table {{.Names}}\t{{.Status}}"
 
-            echo "🔄 Restarting CDC Ingestor (reuses existing slot)..."
-            docker compose --env-file .env -f deployments/docker/docker-compose.yml restart cdc-ingestor
+            echo "🔄 Restarting Go consumer (reuses committed offsets)..."
+            docker compose --env-file .env -f deployments/docker/docker-compose.yml restart consumer
             sleep 5
 
             echo "📊 Initializing Superset..."
@@ -115,7 +131,7 @@ jobs:
             curl -sf http://localhost:9090/-/healthy > /dev/null && echo "  ✅ Prometheus" || echo "  ⚠️ Prometheus"
             curl -sf http://localhost:3000/api/health > /dev/null && echo "  ✅ Grafana" || echo "  ⚠️ Grafana"
             curl -sf http://localhost:9100/metrics > /dev/null && echo "  ✅ Node Exporter" || echo "  ⚠️ Node Exporter"
-            docker ps --filter "name=cdc-ingestor" --format "{{.Names}}\t{{.Status}}" | grep -q "Up" && echo "  ✅ CDC Ingestor" || echo "  ⚠️ CDC Ingestor"
+            docker ps --filter "name=^/consumer$" --format "{{.Names}}\t{{.Status}}" | grep -q "Up" && echo "  ✅ Go consumer" || echo "  ⚠️ Go consumer"
 
             # Reload provisioning dashboard; gunakan localhost + env/secret, jangan IP publik & kredensial hardcoded
             curl -sf -X POST \
