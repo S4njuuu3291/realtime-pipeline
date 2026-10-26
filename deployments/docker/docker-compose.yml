@@ -76,6 +76,9 @@ services:
       # Broker di dalam jaringan Docker memakai hostname container Redpanda
       KAFKA_BROKERS: redpanda:9092
       TOPIC: ${TOPIC:-ecommerce.public.orders}
+      ORDER_ITEMS_TOPIC: ${ORDER_ITEMS_TOPIC:-}
+      USERS_TOPIC: ${USERS_TOPIC:-}
+      PRODUCTS_TOPIC: ${PRODUCTS_TOPIC:-}
       GROUP_ID: ${GROUP_ID:-go-consumer-group}
       CLIENT_ID: ${CLIENT_ID:-my-go-consumer}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
