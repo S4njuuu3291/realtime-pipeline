@@ -232,6 +232,7 @@ services:
       SUPERSET_LOAD_EXAMPLES: "no"
     depends_on:
       - clickhouse
+      CLICKHOUSE_SUPERSET_PASSWORD: ${CLICKHOUSE_SUPERSET_PASSWORD:?set di .env}
     networks:
       - default
     volumes:
