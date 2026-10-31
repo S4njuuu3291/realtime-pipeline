@@ -82,7 +82,8 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           for service in consumer order-service superset; do
-            image="${REGISTRY}/${REPOSITORY,,}/${service}:${COMMIT_SHA}"
+            repository="${REPOSITORY,,}"
+            image="${REGISTRY}/${repository%/*}/${repository##*/}-${service}:${COMMIT_SHA}"
             docker tag "realtime-ci-${service}" "$image"
             docker push "$image"
           done
