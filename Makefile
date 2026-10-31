@@ -141,7 +141,7 @@ resume:
 	@echo "🎬 RESUMING ALL SERVICES..."
 	$(DOCKER_COMPOSE) up -d
 	@echo "🚀 RESTARTING INGESTOR..."
-	$(DOCKER_COMPOSE) restart cdc-ingestor traffic-generator
+	$(DOCKER_COMPOSE) restart debezium traffic-generator
 	@echo "✅ SERVICES ARE RESUMED"
 	$(MAKE) logs
 
@@ -161,7 +161,7 @@ export-dashboard:
 	curl -sf -X POST -u "$(GRAFANA_ADMIN_USER):$(GRAFANA_ADMIN_PASSWORD)" http://localhost:3000/api/admin/provisioning/dashboards/reload
 
 logs-cdc:
-	$(DOCKER_COMPOSE) logs -f cdc-ingestor
+	$(DOCKER_COMPOSE) logs -f debezium
 
 logs-tg:
 	# tail 20 lines of logs and follow

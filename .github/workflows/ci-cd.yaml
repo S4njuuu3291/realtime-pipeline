@@ -54,7 +54,7 @@ jobs:
 
   build:
     name: Build and Push Docker
-    # VPS menggunakan ARM64; build image pada arsitektur yang sama.
+    # VPS menggunakan ARM64; image harus dibangun untuk arsitektur yang sama.
     runs-on: ubuntu-24.04-arm
     needs: test
 
@@ -96,6 +96,8 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build
+    # if event name = push dan branch = main, maka jalankan deploy ke VPS.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     # Secret SSH dan aturan environment production digunakan oleh job ini.
     environment: production
@@ -104,7 +106,7 @@ jobs:
       - name: Checkout deployment config
         uses: actions/checkout@v6
 
-      - name: Stage files and start services on VPS
+      - name: Deploy files and start services on VPS
         env:
           SERVER_IP: ${{ secrets.SERVER_IP }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -113,37 +115,31 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           # Siapkan SSH dan verifikasi identitas VPS lewat known_hosts.
-          : "${SERVER_IP:?Secret SERVER_IP belum diatur}"
-          : "${SSH_PRIVATE_KEY:?Secret SSH_PRIVATE_KEY belum diatur}"
-          : "${SSH_KNOWN_HOSTS:?Secret SSH_KNOWN_HOSTS belum diatur}"
+          test -n "$SERVER_IP" && test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
           trap 'rm -f "$HOME/.ssh/deploy_key"' EXIT
           ssh_options=(-i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10)
-          # Kirim file Git dari commit ini ke direktori staging terpisah.
-          echo "Mengemas file deployment..."
+
+          # Kirim file Git dari commit ini ke direktori production terpisah.
           git archive --format=tar.gz -o /tmp/realtime-deployment.tar.gz HEAD
-          echo "Menyiapkan direktori staging di VPS..."
-          ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" "mkdir -p /opt/realtime-pipeline-project/staging/$COMMIT_SHA"
-          echo "Mengirim dan mengekstrak file deployment..."
-          scp "${ssh_options[@]}" /tmp/realtime-deployment.tar.gz "ubuntu@$SERVER_IP:/opt/realtime-pipeline-project/staging/$COMMIT_SHA/source.tar.gz"
-          ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" "tar -xzf /opt/realtime-pipeline-project/staging/$COMMIT_SHA/source.tar.gz -C /opt/realtime-pipeline-project/staging/$COMMIT_SHA"
+          ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" "mkdir -p /opt/realtime-pipeline-project/production/$COMMIT_SHA"
+          scp "${ssh_options[@]}" /tmp/realtime-deployment.tar.gz "ubuntu@$SERVER_IP:/opt/realtime-pipeline-project/production/$COMMIT_SHA/source.tar.gz"
+          ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" "tar -xzf /opt/realtime-pipeline-project/production/$COMMIT_SHA/source.tar.gz -C /opt/realtime-pipeline-project/production/$COMMIT_SHA"
+
           # Perintah di bawah berjalan di VPS, bukan di runner GitHub.
           ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" bash -s -- "$COMMIT_SHA" "${REPOSITORY,,}" <<'REMOTE'
           set -eu
-          release_dir="/opt/realtime-pipeline-project/staging/$1"
+          release_dir="/opt/realtime-pipeline-project/production/$1"
           export IMAGE_TAG="$1"
           repository="$2"
           export IMAGE_PREFIX="ghcr.io/${repository%/*}/${repository##*/}"
           cd "$release_dir"
+
           # .env produksi disiapkan di VPS dan tidak disalin dari repository.
-          if [ ! -f /opt/realtime-pipeline-project/.env ]; then
-            echo "ERROR: File /opt/realtime-pipeline-project/.env belum ada di VPS." >&2
-            exit 1
-          fi
-          echo "File .env ditemukan. Menarik image..."
+          test -f /opt/realtime-pipeline-project/.env
           # Tarik image yang sesuai commit, lalu jalankan seluruh service.
           # Nama project tetap menjaga nama volume antar-deploy.
           docker compose --project-name realtime-pipeline \
@@ -156,20 +152,4 @@ jobs:
             -f deployments/docker/docker-compose.yml \
             -f deployments/docker/docker-compose.production.yml \
             up -d --no-build
-          # Make dan envsubst diperlukan oleh target inisialisasi di VPS.
-          if ! command -v make >/dev/null || ! command -v envsubst >/dev/null; then
-            sudo -n apt-get update
-            sudo -n apt-get install -y make gettext-base
-          fi
-          # Make membaca .env dari direktori project; file aslinya tetap di VPS.
-          ln -sfn /opt/realtime-pipeline-project/.env .env
-          export DOCKER_COMPOSE="docker compose --project-name realtime-pipeline --env-file /opt/realtime-pipeline-project/.env -f deployments/docker/docker-compose.yml -f deployments/docker/docker-compose.production.yml"
-          # Seed dan inisialisasi hanya pada deploy pertama yang berhasil.
-          if [ ! -f /opt/realtime-pipeline-project/.initialized ]; then
-            echo "Menjalankan inisialisasi pertama..."
-            bash deployments/init-pipeline.sh
-            touch /opt/realtime-pipeline-project/.initialized
-          else
-            echo "Pipeline sudah diinisialisasi; melewati seed dan setup awal."
-          fi
           REMOTE
