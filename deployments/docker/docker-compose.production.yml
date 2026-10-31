@@ -1,0 +1,17 @@
+# Digabungkan dengan docker-compose.yml saat deploy ke VPS.
+# IMAGE_PREFIX dan IMAGE_TAG menunjuk image GHCR yang dibangun oleh CI.
+services:
+  consumer:
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-consumer:${IMAGE_TAG:?set IMAGE_TAG}
+
+  order-service:
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-order-service:${IMAGE_TAG:?set IMAGE_TAG}
+    # Jangan menimpa kode di dalam image dengan bind mount untuk development.
+    volumes: !reset []
+
+  traffic-generator:
+    # Generator menggunakan image yang sama dengan order-service.
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-order-service:${IMAGE_TAG:?set IMAGE_TAG}
+
+  superset:
+    image: ${IMAGE_PREFIX:?set IMAGE_PREFIX}-superset:${IMAGE_TAG:?set IMAGE_TAG}
