@@ -55,16 +55,24 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Pasang Trigger ke masing-masing tabel
+DROP TRIGGER IF EXISTS set_timestamp_users ON users;
 CREATE TRIGGER set_timestamp_users
 BEFORE UPDATE ON users
 FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
 
+DROP TRIGGER IF EXISTS set_timestamp_products ON products;
 CREATE TRIGGER set_timestamp_products
 BEFORE UPDATE ON products
 FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
 
+DROP TRIGGER IF EXISTS set_timestamp_orders ON orders;
 CREATE TRIGGER set_timestamp_orders
 BEFORE UPDATE ON orders
 FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
 
-CREATE PUBLICATION my_pub FOR ALL TABLES;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'my_pub') THEN
+        CREATE PUBLICATION my_pub FOR ALL TABLES;
+    END IF;
+END $$;

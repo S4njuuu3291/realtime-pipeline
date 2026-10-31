@@ -5,14 +5,17 @@ ifneq (,$(wildcard ./.env))
 endif
 
 # Variables
-DOCKER_COMPOSE = docker compose --env-file .env -f deployments/docker/docker-compose.yml
+DOCKER_COMPOSE ?= docker compose --env-file .env -f deployments/docker/docker-compose.yml
 POSTGRES_USER ?= admin
 POSTGRES_DB ?= ecom_db
+POSTGRES_HOST ?= postgres-source
+POSTGRES_PORT ?= 5432
 CONNECTOR_NAME ?= ecommerce-postgres-source
 TOPIC_PREFIX ?= ecommerce
 SLOT_NAME ?= ecommerce_debezium_slot
 PUBLICATION_NAME ?= ecommerce_debezium_publication
 TABLE_INCLUDE_LIST ?= public.users,public.products,public.orders,public.order_items
+export POSTGRES_USER POSTGRES_DB POSTGRES_HOST POSTGRES_PORT CONNECTOR_NAME TOPIC_PREFIX SLOT_NAME PUBLICATION_NAME TABLE_INCLUDE_LIST
 
 .PHONY: help build test clean docker-up docker-down docker-build order-service-bash db-shell init-db clean-db logs export-dashboard export-dashboard-script logs-cdc logs-tg logs-consumer init-redpanda init-debezium init-clickhouse init-analytics init-superset clean-clickhouse reset-clickhouse drop-slot seed-db generate-traffic resume stop reset-all act-deploy k8s-db-shell
 
@@ -74,23 +77,27 @@ init-redpanda:
 	@echo "Initializing Redpanda Topics..."
 	@echo "Waiting for Redpanda to be ready..."
 	@sleep 5
-	$(DOCKER_COMPOSE) exec -T redpanda rpk topic create cdc-events -p 3 || true
+	$(DOCKER_COMPOSE) exec -T redpanda rpk topic describe cdc-events >/dev/null 2>&1 || $(DOCKER_COMPOSE) exec -T redpanda rpk topic create cdc-events -p 3
 	@echo "✓ Topic cdc-events with 3 partitions initialized"
 
 init-dbz:
 	@echo "Generating connector config..."
 	@envsubst < connectors/postgres-template.json > connectors/postgres-source.json
 	@echo "Registering Debezium connector..."
-	@curl --fail-with-body -sS -X POST http://localhost:8083/connectors \
-		-H "Content-Type: application/json" \
-		--data @connectors/postgres-source.json
+	@for attempt in $$(seq 1 60); do curl -fsS http://localhost:8083/connectors >/dev/null 2>&1 && break; if [ "$$attempt" -eq 60 ]; then echo "Debezium is not ready"; exit 1; fi; sleep 2; done
+	@if curl -fsS "http://localhost:8083/connectors/$(CONNECTOR_NAME)" >/dev/null 2>&1; then \
+		echo "Connector $(CONNECTOR_NAME) already exists"; \
+	else \
+		curl --fail-with-body -sS -X POST http://localhost:8083/connectors \
+			-H "Content-Type: application/json" --data @connectors/postgres-source.json; \
+	fi
 	@echo "\nDebezium connector registration request succeeded"
 
 init-db:
 	@echo "Initializing database schema..."
 	@echo "Waiting for PostgreSQL to be ready..."
-	@sleep 3
-	$(DOCKER_COMPOSE) exec -T postgres-source psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /dev/stdin < scripts/sql/init_source.sql
+	@for attempt in $$(seq 1 60); do $(DOCKER_COMPOSE) exec -T postgres-source pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) >/dev/null 2>&1 && break; if [ "$$attempt" -eq 60 ]; then echo "PostgreSQL is not ready"; exit 1; fi; sleep 2; done
+	$(DOCKER_COMPOSE) exec -T postgres-source psql -v ON_ERROR_STOP=1 -U $(POSTGRES_USER) -d $(POSTGRES_DB) -f /dev/stdin < scripts/sql/init_source.sql
 	@echo "✓ Database schema initialized successfully"
 
 seed-db:
@@ -116,13 +123,14 @@ clickhouse-shell:
 
 init-clickhouse:
 	@echo "Initializing ClickHouse schema..."
-	cat scripts/sql/init_clickhouse.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery
-	cat scripts/sql/init_analytics.sql | docker exec -i docker-clickhouse-1 clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery
+	@for attempt in $$(seq 1 60); do $(DOCKER_COMPOSE) exec -T clickhouse clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --query 'SELECT 1' >/dev/null 2>&1 && break; if [ "$$attempt" -eq 60 ]; then echo "ClickHouse is not ready"; exit 1; fi; sleep 2; done
+	$(DOCKER_COMPOSE) exec -T clickhouse clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery < scripts/sql/init_clickhouse.sql
+	$(DOCKER_COMPOSE) exec -T clickhouse clickhouse-client --password $(CLICKHOUSE_ADMIN_PASSWORD) --multiquery < scripts/sql/init_analytics.sql
 	@echo "✓ ClickHouse schema initialized successfully"
 
 init-superset:
 	@echo "Initializing Apache Superset..."
-	docker exec -i docker-superset-1 bash < deployments/docker/init-superset.sh
+	$(DOCKER_COMPOSE) exec -T superset bash < deployments/docker/init-superset.sh
 	@echo "✓ Superset is initialized and ready to use"
 
 reset-all: drop-slot clean-db clean-clickhouse init-db init-clickhouse init-analytics init-redpanda
