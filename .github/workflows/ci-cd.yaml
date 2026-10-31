@@ -54,7 +54,8 @@ jobs:
 
   build:
     name: Build and Push Docker
-    runs-on: ubuntu-latest
+    # VPS menggunakan ARM64; build image pada arsitektur yang sama.
+    runs-on: ubuntu-24.04-arm
     needs: test
 
     # PR hanya menjalankan test; build dan push berjalan setelah push/manual.
