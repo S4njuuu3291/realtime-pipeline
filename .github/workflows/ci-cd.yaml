@@ -112,7 +112,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           # Siapkan SSH dan verifikasi identitas VPS lewat known_hosts.
-          test -n "$SERVER_IP" && test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          : "${SERVER_IP:?Secret SERVER_IP belum diatur}"
+          : "${SSH_PRIVATE_KEY:?Secret SSH_PRIVATE_KEY belum diatur}"
+          : "${SSH_KNOWN_HOSTS:?Secret SSH_KNOWN_HOSTS belum diatur}"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
@@ -120,8 +122,11 @@ jobs:
           trap 'rm -f "$HOME/.ssh/deploy_key"' EXIT
           ssh_options=(-i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10)
           # Kirim file Git dari commit ini ke direktori staging terpisah.
+          echo "Mengemas file deployment..."
           git archive --format=tar.gz -o /tmp/realtime-deployment.tar.gz HEAD
+          echo "Menyiapkan direktori staging di VPS..."
           ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" "mkdir -p /opt/realtime-pipeline-project/staging/$COMMIT_SHA"
+          echo "Mengirim dan mengekstrak file deployment..."
           scp "${ssh_options[@]}" /tmp/realtime-deployment.tar.gz "ubuntu@$SERVER_IP:/opt/realtime-pipeline-project/staging/$COMMIT_SHA/source.tar.gz"
           ssh "${ssh_options[@]}" "ubuntu@$SERVER_IP" "tar -xzf /opt/realtime-pipeline-project/staging/$COMMIT_SHA/source.tar.gz -C /opt/realtime-pipeline-project/staging/$COMMIT_SHA"
           # Perintah di bawah berjalan di VPS, bukan di runner GitHub.
@@ -133,7 +138,11 @@ jobs:
           export IMAGE_PREFIX="ghcr.io/${repository%/*}/${repository##*/}"
           cd "$release_dir"
           # .env produksi disiapkan di VPS dan tidak disalin dari repository.
-          test -f /opt/realtime-pipeline-project/.env
+          if [ ! -f /opt/realtime-pipeline-project/.env ]; then
+            echo "ERROR: File /opt/realtime-pipeline-project/.env belum ada di VPS." >&2
+            exit 1
+          fi
+          echo "File .env ditemukan. Menarik image..."
           # Tarik image yang sesuai commit, lalu jalankan seluruh service.
           # Nama project tetap menjaga nama volume antar-deploy.
           docker compose --project-name realtime-pipeline \
