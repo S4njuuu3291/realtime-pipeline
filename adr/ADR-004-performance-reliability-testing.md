@@ -63,7 +63,7 @@ Dashboard dapat dipertimbangkan kemudian jika jumlah skenario, frekuensi penggun
 - Mengembangkan skenario untuk PostgreSQL, Superset, dan komponen lain sesuai kebutuhan, termasuk simulasi error.
 
 Sebagai contoh, eksperimen consumer dapat menjeda consumer selama periode tertentu saat traffic berjalan. Hipotesisnya, backlog bertambah selama jeda dan berkurang setelah consumer dilanjutkan. Metrik yang diamati meliputi consumer lag, waktu pemulihan, throughput, serta event yang hilang atau terduplikasi. Kriteria lulus dan parameter ditentukan sebelum eksperimen dijalankan.
-
+ 
 ## Konsekuensi
 
 **Positif**
