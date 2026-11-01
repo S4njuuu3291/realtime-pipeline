@@ -99,11 +99,11 @@ def load_traffic_config():
     with config_path.open(encoding="utf-8") as config_file:
         return yaml.safe_load(config_file)
 
-def send_transaction(worker_id: int):
+def send_transaction(worker_id: int, timeout_seconds: float):
     """Fungsi worker tunggal untuk menembak 1 API Call"""
     try:
         # Timeout penting agar thread tidak nyangkut selamanya jika server melambat
-        response = requests.post(API_URL, timeout=5)
+        response = requests.post(API_URL, timeout=timeout_seconds)
         if response.status_code == 200:
             res = response.json()
             # Hanya print sebagian kecil saja agar terminal tidak lag
@@ -118,36 +118,39 @@ def send_transaction(worker_id: int):
         if random.random() < 0.01:
             logger.error("[Worker-%s] Gagal: %s", worker_id, e)
 
-def generate_traffic():
+def generate_traffic(config):
     """Fase 2: Menembakkan transaksi menggunakan Thread Pool dengan pola Gelombang"""
     logger.info("[TRAFFIC] Memulai simulator transaksi")
-    logger.info("Pola: base load 2-5 request per siklus; flash sale 30-50 request setiap 30 siklus")
+    request_config = config["request"]
+    flash_sale = config["flash_sale"]
+    duration = config["experiment"]["duration_seconds"]
+    logger.info("Base load: %s request per detik", request_config["base_rate_per_second"])
     logger.info("Tekan Ctrl+C untuk menghentikan")
     
     # Gunakan thread pool untuk menembakkan request secara konkuren
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        cycle = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=request_config["max_concurrency"]) as executor:
+        started = time.monotonic()
+        next_request = started
+        pending = set()
         try:
             while True:
-                cycle += 1
-                
-                # Logika Pola Trafik
-                is_flash_sale = (cycle % 30 == 0) # Tiap siklus ke-30 terjadi Flash Sale
-                
-                if is_flash_sale:
-                    target_tps = random.randint(30, 50)
-                    logger.info("[FLASH SALE] Menembakkan %s request", target_tps)
-                else:
-                    target_tps = random.randint(2, 5) # Base load normal e-commerce
-                
-                # Tembak API secara paralel
-                futures = [executor.submit(send_transaction, i) for i in range(target_tps)]
-                
-                # Tunggu semua request di detik ini selesai
-                concurrent.futures.wait(futures)
-                
-                # Jeda 1 detik untuk menyimulasikan hitungan TPS sesungguhnya
-                time.sleep(1)
+                now = time.monotonic()
+                elapsed = now - started
+                if duration is not None and elapsed >= duration:
+                    logger.info("[TRAFFIC] Durasi eksperimen selesai")
+                    break
+
+                is_flash_sale = (flash_sale["enabled"] and
+                                 elapsed >= flash_sale["interval_seconds"] and
+                                 elapsed % flash_sale["interval_seconds"] < flash_sale["duration_seconds"])
+                rate = flash_sale["rate_per_second"] if is_flash_sale else request_config["base_rate_per_second"]
+                if now < next_request:
+                    time.sleep(min(next_request - now, 0.1))
+                    continue
+                pending = {future for future in pending if not future.done()}
+                if len(pending) < request_config["max_concurrency"]:
+                    pending.add(executor.submit(send_transaction, len(pending), request_config["timeout_seconds"]))
+                next_request = now + 1 / rate
                 
         except KeyboardInterrupt:
             logger.info("[TRAFFIC] Simulator dihentikan oleh user")
@@ -168,6 +171,6 @@ if __name__ == "__main__":
         seed_db()
     elif args.traffic:
         traffic_config = load_traffic_config()
-        generate_traffic()
+        generate_traffic(traffic_config)
     else:
         parser.print_help()
