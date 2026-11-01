@@ -21,7 +21,7 @@ class TestDataGenerator(unittest.TestCase):
         post.return_value.status_code = 200
         post.return_value.json.return_value = {"order_id": 42}
 
-        data_generator.send_transaction(1)
+        data_generator.send_transaction(1, 5)
 
         post.assert_called_once_with(data_generator.API_URL, timeout=5)
         post.return_value.json.assert_called_once()

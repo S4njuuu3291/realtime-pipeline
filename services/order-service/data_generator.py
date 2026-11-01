@@ -1,16 +1,20 @@
 import argparse
+import logging
 import random
 import time
 import requests
 import concurrent.futures
 from datetime import datetime
+from pathlib import Path
 from faker import Faker
 from sqlalchemy.orm import Session
+import yaml
 
 # Import komponen database dari main.py
 from main import User, Product, SessionLocal
 
 fake = Faker()
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # 1. KATALOG PRODUK REALISTIS (ENTERPRISE)
@@ -90,60 +94,69 @@ def seed_db():
 # ==========================================
 API_URL = "http://localhost:8000/simulate/order" # Gunakan localhost jika dari dalam container fastapi ke dirinya sendiri, atau "order-service" jika via docker network
 
-def send_transaction(worker_id: int):
+def load_traffic_config():
+    config_path = Path(__file__).resolve().with_name("traffic-config.yaml")
+    with config_path.open(encoding="utf-8") as config_file:
+        return yaml.safe_load(config_file)
+
+def send_transaction(worker_id: int, timeout_seconds: float):
     """Fungsi worker tunggal untuk menembak 1 API Call"""
     try:
         # Timeout penting agar thread tidak nyangkut selamanya jika server melambat
-        response = requests.post(API_URL, timeout=5)
+        response = requests.post(API_URL, timeout=timeout_seconds)
         if response.status_code == 200:
             res = response.json()
             # Hanya print sebagian kecil saja agar terminal tidak lag
             if random.random() < 0.1: 
                 # Perbaikan: Menggunakan 'order_id' sesuai output di main.py
                 order_id = res.get('order_id', 'N/A')
-                print(f"🛒 [Worker-{worker_id}] Transaksi Sukses -> Order ID: {order_id}")
+                logger.info("[Worker-%s] Transaksi sukses -> Order ID: %s", worker_id, order_id)
         else:
             if random.random() < 0.05:
-                print(f"⚠️ [Worker-{worker_id}] Server Busy: {response.status_code}")
+                logger.warning("[Worker-%s] Server busy: %s", worker_id, response.status_code)
     except Exception as e:
         if random.random() < 0.01:
-            print(f"❌ [Worker-{worker_id}] Gagal: {e}")
+            logger.error("[Worker-%s] Gagal: %s", worker_id, e)
 
-def generate_traffic():
+def generate_traffic(config):
     """Fase 2: Menembakkan transaksi menggunakan Thread Pool dengan pola Gelombang"""
-    print("🔥 [TRAFFIC] Memulai Mesin Simulator Transaksi...")
-    print("📈 Pola: Base Load 2-5 TPS | Flash Sale 30-50 TPS (setiap 30 detik)")
-    print("Tekan Ctrl+C untuk menghentikan...\n")
+    logger.info("[TRAFFIC] Memulai simulator transaksi")
+    request_config = config["request"]
+    flash_sale = config["flash_sale"]
+    duration = config["experiment"]["duration_seconds"]
+    logger.info("Base load: %s request per detik", request_config["base_rate_per_second"])
+    logger.info("Tekan Ctrl+C untuk menghentikan")
     
     # Gunakan thread pool untuk menembakkan request secara konkuren
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-        cycle = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=request_config["max_concurrency"]) as executor:
+        started = time.monotonic()
+        next_request = started
+        pending = set()
         try:
             while True:
-                cycle += 1
-                
-                # Logika Pola Trafik
-                is_flash_sale = (cycle % 30 == 0) # Tiap siklus ke-30 terjadi Flash Sale
-                
-                if is_flash_sale:
-                    target_tps = random.randint(30, 50)
-                    print(f"\n🚨 [FLASH SALE TERDETEKSI] Menembakkan {target_tps} transaksi seketika!\n")
-                else:
-                    target_tps = random.randint(2, 5) # Base load normal e-commerce
-                
-                # Tembak API secara paralel
-                futures = [executor.submit(send_transaction, i) for i in range(target_tps)]
-                
-                # Tunggu semua request di detik ini selesai
-                concurrent.futures.wait(futures)
-                
-                # Jeda 1 detik untuk menyimulasikan hitungan TPS sesungguhnya
-                time.sleep(1)
+                now = time.monotonic()
+                elapsed = now - started
+                if duration is not None and elapsed >= duration:
+                    logger.info("[TRAFFIC] Durasi eksperimen selesai")
+                    break
+
+                is_flash_sale = (flash_sale["enabled"] and
+                                 elapsed >= flash_sale["interval_seconds"] and
+                                 elapsed % flash_sale["interval_seconds"] < flash_sale["duration_seconds"])
+                rate = flash_sale["rate_per_second"] if is_flash_sale else request_config["base_rate_per_second"]
+                if now < next_request:
+                    time.sleep(min(next_request - now, 0.1))
+                    continue
+                pending = {future for future in pending if not future.done()}
+                if len(pending) < request_config["max_concurrency"]:
+                    pending.add(executor.submit(send_transaction, len(pending), request_config["timeout_seconds"]))
+                next_request = now + 1 / rate
                 
         except KeyboardInterrupt:
-            print("\n🛑 [TRAFFIC] Simulator dihentikan oleh user.")
+            logger.info("[TRAFFIC] Simulator dihentikan oleh user")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Script Manajemen Data & Simulator Trafik (Enterprise Grade)")
     parser.add_argument('--seed', action='store_true', help='Suntik Data Katalog & User')
     parser.add_argument('--traffic', action='store_true', help='Jalankan Robot Simulator Trafik')
@@ -157,6 +170,7 @@ if __name__ == "__main__":
     if args.seed:
         seed_db()
     elif args.traffic:
-        generate_traffic()
+        traffic_config = load_traffic_config()
+        generate_traffic(traffic_config)
     else:
         parser.print_help()
