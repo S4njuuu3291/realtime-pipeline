@@ -1,16 +1,20 @@
 import argparse
+import logging
 import random
 import time
 import requests
 import concurrent.futures
 from datetime import datetime
+from pathlib import Path
 from faker import Faker
 from sqlalchemy.orm import Session
+import yaml
 
 # Import komponen database dari main.py
 from main import User, Product, SessionLocal
 
 fake = Faker()
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # 1. KATALOG PRODUK REALISTIS (ENTERPRISE)
@@ -90,6 +94,11 @@ def seed_db():
 # ==========================================
 API_URL = "http://localhost:8000/simulate/order" # Gunakan localhost jika dari dalam container fastapi ke dirinya sendiri, atau "order-service" jika via docker network
 
+def load_traffic_config():
+    config_path = Path(__file__).resolve().with_name("traffic-config.yaml")
+    with config_path.open(encoding="utf-8") as config_file:
+        return yaml.safe_load(config_file)
+
 def send_transaction(worker_id: int):
     """Fungsi worker tunggal untuk menembak 1 API Call"""
     try:
@@ -101,19 +110,19 @@ def send_transaction(worker_id: int):
             if random.random() < 0.1: 
                 # Perbaikan: Menggunakan 'order_id' sesuai output di main.py
                 order_id = res.get('order_id', 'N/A')
-                print(f"🛒 [Worker-{worker_id}] Transaksi Sukses -> Order ID: {order_id}")
+                logger.info("[Worker-%s] Transaksi sukses -> Order ID: %s", worker_id, order_id)
         else:
             if random.random() < 0.05:
-                print(f"⚠️ [Worker-{worker_id}] Server Busy: {response.status_code}")
+                logger.warning("[Worker-%s] Server busy: %s", worker_id, response.status_code)
     except Exception as e:
         if random.random() < 0.01:
-            print(f"❌ [Worker-{worker_id}] Gagal: {e}")
+            logger.error("[Worker-%s] Gagal: %s", worker_id, e)
 
 def generate_traffic():
     """Fase 2: Menembakkan transaksi menggunakan Thread Pool dengan pola Gelombang"""
-    print("🔥 [TRAFFIC] Memulai Mesin Simulator Transaksi...")
-    print("📈 Pola: Base Load 2-5 TPS | Flash Sale 30-50 TPS (setiap 30 detik)")
-    print("Tekan Ctrl+C untuk menghentikan...\n")
+    logger.info("[TRAFFIC] Memulai simulator transaksi")
+    logger.info("Pola: base load 2-5 request per siklus; flash sale 30-50 request setiap 30 siklus")
+    logger.info("Tekan Ctrl+C untuk menghentikan")
     
     # Gunakan thread pool untuk menembakkan request secara konkuren
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
@@ -127,7 +136,7 @@ def generate_traffic():
                 
                 if is_flash_sale:
                     target_tps = random.randint(30, 50)
-                    print(f"\n🚨 [FLASH SALE TERDETEKSI] Menembakkan {target_tps} transaksi seketika!\n")
+                    logger.info("[FLASH SALE] Menembakkan %s request", target_tps)
                 else:
                     target_tps = random.randint(2, 5) # Base load normal e-commerce
                 
@@ -141,9 +150,10 @@ def generate_traffic():
                 time.sleep(1)
                 
         except KeyboardInterrupt:
-            print("\n🛑 [TRAFFIC] Simulator dihentikan oleh user.")
+            logger.info("[TRAFFIC] Simulator dihentikan oleh user")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Script Manajemen Data & Simulator Trafik (Enterprise Grade)")
     parser.add_argument('--seed', action='store_true', help='Suntik Data Katalog & User')
     parser.add_argument('--traffic', action='store_true', help='Jalankan Robot Simulator Trafik')
@@ -157,6 +167,7 @@ if __name__ == "__main__":
     if args.seed:
         seed_db()
     elif args.traffic:
+        traffic_config = load_traffic_config()
         generate_traffic()
     else:
         parser.print_help()
